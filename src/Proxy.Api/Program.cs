@@ -29,10 +29,6 @@ builder.Services.AddRateLimiter(o =>
         return ValueTask.CompletedTask;
     };
 
-    // MapReverseProxy() is a single catch-all route, so named policies attached via
-    // .RequireRateLimiting("x") never apply to it. Use a global partitioned limiter instead,
-    // keyed on client IP + a bucket derived from the request path, so /transfers, /admin and
-    // everything else each get their own window without needing per-endpoint routing.
     o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
     {
         var path = httpContext.Request.Path.Value ?? string.Empty;

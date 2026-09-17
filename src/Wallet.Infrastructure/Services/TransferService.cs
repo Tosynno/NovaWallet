@@ -70,11 +70,6 @@ public sealed class TransferService(
         }
         catch (Microsoft.EntityFrameworkCore.DbUpdateException)
         {
-            // `await` is not allowed in a catch filter, so the concurrent-duplicate check has to happen
-            // inside the catch block itself: two requests racing on the same Idempotency-Key can both pass
-            // the pre-check and then collide on the unique index when they commit. Whichever loses the
-            // race lands here — roll back, then replay the winner's stored result instead of surfacing
-            // a raw DB error for what is really a successful (already-processed) request.
             await tx.RollbackAsync(ct);
             var replay = await TryReplayAsync(command.CustomerId, command.IdempotencyKey, hash, ct);
             if (replay is not null) return replay;
@@ -148,8 +143,6 @@ public sealed class TransferService(
         }
         catch (Microsoft.EntityFrameworkCore.DbUpdateException)
         {
-            // Same reasoning as in TransferInternalAsync: handle the idempotency-key race inside the
-            // catch block rather than in an (illegal) async catch filter.
             await tx.RollbackAsync(ct);
             var replay = await TryReplayAsync(command.CustomerId, command.IdempotencyKey, hash, ct);
             if (replay is not null) return replay;
@@ -166,7 +159,6 @@ public sealed class TransferService(
 
         var hash = IdempotencyFingerprint.Compute(command);
 
-        // Resolve the destination wallet first so we can use its CustomerId for idempotency lookup.
         var destLookup = await wallets.GetByAccountNumberAsync(command.DestinationAccountNumber, ct)
             ?? throw new DomainException("wallet.destination_account_not_found", "Destination account number does not exist.");
         if (destLookup.AccountType != AccountType.Customer) throw new DomainException("wallet.destination_not_customer", "Destination must be a customer wallet.");

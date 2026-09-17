@@ -6,26 +6,30 @@
 
 <PageTitle>Login - NovaWallet</PageTitle>
 
-<div class="container mt-5" style="max-width:400px">
-    <h3 class="text-center mb-4">NovaWallet Login</h3>
-    @if (ErrorMessage is not null)
-    {
-        <div class="alert alert-danger">@ErrorMessage</div>
-    }
-    <EditForm Model="@LoginModel" OnValidSubmit="@DoLogin" class="card p-4 shadow-sm">
-        <DataAnnotationsValidator />
-        <div class="mb-3">
-            <label class="form-label">App Key</label>
-            <InputText class="form-control" @bind-Value="LoginModel.AppKey" />
-        </div>
-        <div class="mb-3">
-            <label class="form-label">App Secret</label>
-            <InputText type="password" class="form-control" @bind-Value="LoginModel.AppSecret" />
-        </div>
-        <button type="submit" class="btn btn-primary w-100" disabled="@Loading">
-            @(Loading ? "Signing in..." : "Sign In")
-        </button>
-    </EditForm>
+<div class="login-wrapper">
+    <div class="login-card">
+        <div class="login-logo">N</div>
+        <h3 class="text-center mb-1" style="color:var(--nw-primary)">NovaWallet</h3>
+        <p class="text-center text-muted mb-4" style="font-size:0.9rem">Sign in to your wallet</p>
+        @if (ErrorMessage is not null)
+        {
+            <div class="alert alert-danger mb-3">@ErrorMessage</div>
+        }
+        <EditForm Model="@LoginModel" FormName="customer-login" OnValidSubmit="@DoLogin">
+            <DataAnnotationsValidator />
+            <div class="mb-3">
+                <label class="form-label">App Key</label>
+                <InputText class="form-control" placeholder="Enter your App Key" @bind-Value="LoginModel.AppKey" />
+            </div>
+            <div class="mb-4">
+                <label class="form-label">App Secret</label>
+                <InputText type="password" class="form-control" placeholder="Enter your App Secret" @bind-Value="LoginModel.AppSecret" />
+            </div>
+            <button type="submit" class="btn btn-primary w-100" style="padding:0.7rem" disabled="@Loading">
+                @if (Loading) { <span class="spinner"></span> <span class="ms-2">Signing in...</span> } else { <span>Sign In</span> }
+            </button>
+        </EditForm>
+    </div>
 </div>
 
 @code {
@@ -35,29 +39,15 @@
 
     private async Task DoLogin()
     {
-        Loading = true;
-        ErrorMessage = null;
+        Loading = true; ErrorMessage = null;
         try
         {
             var success = await Auth.LoginAsync(LoginModel.AppKey, LoginModel.AppSecret);
-            if (success)
-            {
-                AuthStateProvider.NotifyChanged();
-                Nav.NavigateTo("/dashboard");
-            }
-            else
-            {
-                ErrorMessage = "Invalid credentials or channel not active.";
-            }
+            if (success) { AuthStateProvider.NotifyChanged(); Nav.NavigateTo("/dashboard"); }
+            else { ErrorMessage = "Invalid credentials or channel not active."; }
         }
-        catch (Exception ex)
-        {
-            ErrorMessage = $"Login failed: {ex.Message}";
-        }
-        finally
-        {
-            Loading = false;
-        }
+        catch (Exception ex) { ErrorMessage = $"Login failed: {ex.Message}"; }
+        finally { Loading = false; }
     }
 
     private sealed class LoginFormData

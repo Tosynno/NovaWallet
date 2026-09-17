@@ -3,23 +3,23 @@
 @inject AuthService Auth
 
 <div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+    <NavMenu />
     <main>
-        <div class="top-row px-4 d-flex justify-content-between align-items-center">
-            <a href="/dashboard" class="text-decoration-none">NovaWallet Admin</a>
+        <div class="top-row d-flex justify-content-between align-items-center">
+            <span style="font-weight:700;color:var(--nw-primary)">Nova<span style="color:var(--nw-accent)">Wallet</span> Admin</span>
             @if (Auth.IsAuthenticated)
             {
-                <span class="text-muted small">@Auth.ChannelKey</span>
-                <a href="/login" class="btn btn-outline-secondary btn-sm" @onclick="@(() => { Auth.Logout(); })">Logout</a>
+                <div class="d-flex align-items-center gap-3">
+                    <span class="text-muted small">@Auth.DisplayName</span>
+                    <a href="/login" class="btn btn-outline-primary btn-sm" @onclick="@(() => { Auth.Logout(); })">Logout</a>
+                </div>
             }
             else
             {
                 <a href="/login" class="btn btn-primary btn-sm">Login</a>
             }
         </div>
-        <article class="content px-4">
+        <article class="content">
             @Body
         </article>
     </main>
@@ -28,5 +28,5 @@
 <div id="blazor-error-ui" class="blazor-error-ui" style="display:none">
     An unhandled error has occurred.
     <a href="" class="reload">Reload</a>
-    <a class="dismiss">🗙</a>
+    <a class="dismiss">X</a>
 </div>

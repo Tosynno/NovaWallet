@@ -93,8 +93,8 @@ public sealed class WatBusinessDayTests
     [Fact]
     public void WAT_business_day_handles_midnight_boundary()
     {
-        var beforeMidnight = new DateTimeOffset(2026, 9, 15, 22, 59, 59, TimeSpan.Zero); // 23:59:59 WAT
-        var afterMidnight = new DateTimeOffset(2026, 9, 15, 23, 0, 0, TimeSpan.Zero);      // 00:00:00 WAT
+        var beforeMidnight = new DateTimeOffset(2026, 9, 15, 22, 59, 59, TimeSpan.Zero);
+        var afterMidnight = new DateTimeOffset(2026, 9, 15, 23, 0, 0, TimeSpan.Zero);
         Assert.Equal(new DateOnly(2026, 9, 15), WatBusinessDay.Today(beforeMidnight));
         Assert.Equal(new DateOnly(2026, 9, 16), WatBusinessDay.Today(afterMidnight));
     }

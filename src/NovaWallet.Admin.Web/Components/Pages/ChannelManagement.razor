@@ -1,53 +1,70 @@
 @page "/channels"
 @using NovaWallet.Admin.Web.Services
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
-@inject ApiClient Api
+@inject AdminDatabaseService Db
 
 <PageTitle>Channel Management - NovaWallet Admin</PageTitle>
 
-<div class="container mt-4">
+<div class="container-fluid">
     <h2>Channel Management</h2>
     <hr />
     @if (ErrorMessage is not null) { <div class="alert alert-danger">@ErrorMessage</div> }
     @if (SuccessMessage is not null) { <div class="alert alert-success">@SuccessMessage</div> }
-    <div class="card mb-3">
-        <div class="card-body">
-            <h5>Create New Channel</h5>
-            <div class="row g-2 align-items-end">
-                <div class="col"><label class="form-label">Channel Key</label><input class="form-control" @bind="NewChannelKey" /></div>
-                <div class="col"><label class="form-label">Channel Name</label><input class="form-control" @bind="NewChannelName" /></div>
-                <div class="col-auto"><button class="btn btn-primary" @onclick="CreateChannel" disabled="@Loading">Create</button></div>
-            </div>
+
+    <div class="card mb-3"><div class="card-body">
+        <h5><span class="oi oi-plus me-2" style="color:var(--nw-accent)"></span>Create New Channel</h5>
+        <div class="row g-2 align-items-end">
+            <div class="col"><label class="form-label">Channel Key</label><input class="form-control" placeholder="e.g. WEB_CHANNEL" @bind="NewChannelKey" /></div>
+            <div class="col"><label class="form-label">Channel Name</label><input class="form-control" placeholder="e.g. Web Channel" @bind="NewChannelName" /></div>
+            <div class="col-auto"><button class="btn btn-primary" disabled="@Creating" @onclick="CreateChannel">
+                @if (Creating) { <span class="spinner"></span> } else { <span class="oi oi-plus me-1"></span> }
+                @(Creating ? " Creating..." : " Create")
+            </button></div>
         </div>
-    </div>
+    </div></div>
+
     @if (Channels is not null)
     {
-        <table class="table table-striped">
-            <thead><tr><th>Channel Key</th><th>Name</th><th>App Key</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
-            <tbody>
-                @foreach (var c in Channels)
-                {
-                    <tr>
-                        <td>@c.ChannelKey</td><td>@c.ChannelName</td><td>@c.AppKey</td>
-                        <td><span class="badge @(c.Status == "Active" ? "bg-success" : c.Status == "Suspended" ? "bg-warning" : "bg-danger")">@c.Status</span></td>
-                        <td>@c.CreatedAt</td>
-                        <td>
-                            <button class="btn btn-outline-secondary btn-sm" @onclick='() => RotateKeys(c.ChannelKey)'>Rotate Keys</button>
-                            @if (c.Status == "Active") { <button class="btn btn-outline-warning btn-sm" @onclick='() => UpdateStatus(c.ChannelKey, "Suspended")'>Suspend</button> }
-                            @if (c.Status == "Suspended") { <button class="btn btn-outline-success btn-sm" @onclick='() => UpdateStatus(c.ChannelKey, "Active")'>Activate</button> }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+        <div class="card"><div class="card-body p-0">
+            <table class="table table-striped table-hover mb-0">
+                <thead><tr><th>Channel Key</th><th>Name</th><th>App Key</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+                <tbody>
+                    @foreach (var c in Channels)
+                    {
+                        <tr>
+                            <td><span class="monospace">@c.ChannelKey</span></td>
+                            <td>@c.ChannelName</td>
+                            <td><span class="monospace">@c.AppKey</span></td>
+                            <td><span class="badge @(c.Status == "Active" ? "bg-success" : c.Status == "Suspended" ? "bg-warning" : "bg-danger")">@c.Status</span></td>
+                            <td class="text-muted small">@c.CreatedAt</td>
+                            <td>
+                                <button class="btn btn-outline-secondary btn-sm me-1" disabled="@RotatingKey" @onclick='async () => await RotateKeys(c.ChannelKey)'><span class="oi oi-refresh"></span> Rotate</button>
+                                @if (c.Status == "Active")
+                                {
+                                    <button class="btn btn-outline-warning btn-sm" @onclick='async () => await ChangeStatus(c.ChannelKey, "Suspended")'><span class="oi oi-pause"></span> Suspend</button>
+                                }
+                                else if (c.Status == "Suspended")
+                                {
+                                    <button class="btn btn-outline-success btn-sm" @onclick='async () => await ChangeStatus(c.ChannelKey, "Active")'><span class="oi oi-play"></span> Activate</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div></div>
+    }
+    else if (Loading)
+    {
+        <p class="loading-text">Loading channels...</p>
     }
 </div>
 
 @code {
-    private List<ChannelDto>? Channels;
+    private List<AdminDatabaseService.ChannelDto>? Channels;
+    private bool Loading, Creating, RotatingKey;
     private string NewChannelKey = "";
     private string NewChannelName = "";
-    private bool Loading;
     private string? ErrorMessage, SuccessMessage;
 
     protected override async Task OnInitializedAsync() => await LoadChannels();
@@ -55,47 +72,53 @@
     private async Task LoadChannels()
     {
         Loading = true;
-        try { Channels = await Api.Http.GetFromJsonAsync<List<ChannelDto>>("/api/v1/channels"); }
+        try { Channels = await Db.GetChannelsAsync(); }
         catch (Exception ex) { ErrorMessage = ex.Message; }
         finally { Loading = false; }
     }
 
     private async Task CreateChannel()
     {
-        Loading = true; ErrorMessage = null; SuccessMessage = null;
+        if (string.IsNullOrWhiteSpace(NewChannelKey) || string.IsNullOrWhiteSpace(NewChannelName))
+        { ErrorMessage = "Channel Key and Name are required."; return; }
+
+        Creating = true; ErrorMessage = null; SuccessMessage = null;
         try
         {
-            var response = await Api.Http.PostAsJsonAsync("/api/v1/channels", new { ChannelKey = NewChannelKey, ChannelName = NewChannelName });
-            if (response.IsSuccessStatusCode)
-            {
-                var result = await response.Content.ReadFromJsonAsync<CreateChannelResponse>();
-                SuccessMessage = $"Channel created. AppKey: {result?.AppKey}, AppSecret: {result?.AppSecret} (save securely!)";
-                NewChannelKey = ""; NewChannelName = "";
-                await LoadChannels();
-            }
-            else { ErrorMessage = await response.Content.ReadAsStringAsync(); }
+            var result = await Db.CreateChannelAsync(NewChannelKey, NewChannelName);
+            SuccessMessage = $"Channel '{result.ChannelKey}' created. AppKey: {result.AppKey}, AppSecret: {result.AppSecret} (save securely — shown once only).";
+            NewChannelKey = ""; NewChannelName = "";
+            await LoadChannels();
         }
         catch (Exception ex) { ErrorMessage = ex.Message; }
-        finally { Loading = false; }
+        finally { Creating = false; }
     }
 
     private async Task RotateKeys(string channelKey)
     {
-        var response = await Api.Http.PutAsync($"/api/v1/channels/{channelKey}/keys", null);
-        if (response.IsSuccessStatusCode)
+        RotatingKey = true; ErrorMessage = null; SuccessMessage = null;
+        try
         {
-            var result = await response.Content.ReadFromJsonAsync<CreateChannelResponse>();
-            SuccessMessage = $"Keys rotated. AppKey: {result?.AppKey}, AppSecret: {result?.AppSecret} (save securely!)";
+            var result = await Db.RotateChannelKeysAsync(channelKey);
+            if (result is not null)
+                SuccessMessage = $"Keys rotated for '{channelKey}'. New AppKey: {result.AppKey}, AppSecret: {result.AppSecret} (save securely).";
+            else ErrorMessage = "Channel not found.";
+            await LoadChannels();
         }
-        else { ErrorMessage = await response.Content.ReadAsStringAsync(); }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { RotatingKey = false; }
     }
 
-    private async Task UpdateStatus(string channelKey, string status)
+    private async Task ChangeStatus(string channelKey, string status)
     {
-        await Api.Http.PutAsJsonAsync($"/api/v1/channels/{channelKey}/status", new { Status = status });
-        await LoadChannels();
+        ErrorMessage = null; SuccessMessage = null;
+        try
+        {
+            var success = await Db.UpdateChannelStatusAsync(channelKey, status);
+            if (success) SuccessMessage = $"Channel '{channelKey}' status changed to {status}.";
+            else ErrorMessage = "Channel not found.";
+            await LoadChannels();
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
     }
-
-    public sealed class ChannelDto { public string ChannelKey { get; set; } = ""; public string ChannelName { get; set; } = ""; public string AppKey { get; set; } = ""; public string Status { get; set; } = ""; public DateTime CreatedAt { get; set; } }
-    public sealed class CreateChannelResponse { public string AppKey { get; set; } = ""; public string AppSecret { get; set; } = ""; }
 }

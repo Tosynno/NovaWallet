@@ -116,6 +116,7 @@ public sealed class Transfer
     public void MarkSettled(DateTimeOffset now) { Status = TransferStatus.Settled; UpdatedAt = now; }
     public void MarkFailed(DateTimeOffset now) { Status = TransferStatus.Failed; UpdatedAt = now; }
     public void MarkUnknown(DateTimeOffset now) { Status = TransferStatus.Unknown; UpdatedAt = now; }
+    public void ResetForRepost(DateTimeOffset now) { Status = TransferStatus.Submitted; ExternalReference = null; UpdatedAt = now; }
     public void SetExternalReference(string externalReference, DateTimeOffset now) { ExternalReference = externalReference; UpdatedAt = now; }
     public void MarkReconciled(DateTimeOffset now) { ReconciledAt = now; UpdatedAt = now; }
 }

@@ -1,19 +1,58 @@
 @page "/dashboard"
 @using NovaWallet.Admin.Web.Services
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
-@inject ApiClient Api
+@inject AdminDatabaseService Db
 
 <PageTitle>Dashboard - NovaWallet Admin</PageTitle>
 
-<div class="container mt-4">
+<div class="container-fluid">
     <h2>Admin Dashboard</h2>
     <hr />
-    <div class="row g-4">
-        <div class="col-md-3"><div class="card text-white bg-primary"><div class="card-body"><h5>External Accounts</h5><a href="/external-accounts" class="text-white">View →</a></div></div></div>
-        <div class="col-md-3"><div class="card text-white bg-success"><div class="card-body"><h5>Reconciliation</h5><a href="/reconciliation" class="text-white">View →</a></div></div></div>
-        <div class="col-md-3"><div class="card text-white bg-warning"><div class="card-body"><h5>Settlement Review</h5><a href="/settlement" class="text-white">View →</a></div></div></div>
-        <div class="col-md-3"><div class="card text-white bg-danger"><div class="card-body"><h5>Repost Failed</h5><a href="/repost" class="text-white">View →</a></div></div></div>
-        <div class="col-md-3"><div class="card text-white bg-info"><div class="card-body"><h5>Transactions</h5><a href="/transactions" class="text-white">Monitor →</a></div></div></div>
-        <div class="col-md-3"><div class="card text-white bg-secondary"><div class="card-body"><h5>Channels</h5><a href="/channels" class="text-white">Manage →</a></div></div></div>
+    @if (Stats is not null)
+    {
+        <div class="row g-3 mb-3">
+            <div class="col-md-3"><div class="stat-card stat-blue"><span class="stat-icon oi oi-transfer"></span><h6>Total Transfers</h6><div class="stat-value">@Stats.TotalTransfers</div></div></div>
+            <div class="col-md-3"><div class="stat-card stat-green"><span class="stat-icon oi oi-check"></span><h6>Settled</h6><div class="stat-value">@Stats.SettledCount</div></div></div>
+            <div class="col-md-3"><div class="stat-card stat-red"><span class="stat-icon oi oi-x"></span><h6>Failed</h6><div class="stat-value">@Stats.FailedCount</div></div></div>
+            <div class="col-md-3"><div class="stat-card stat-orange"><span class="stat-icon oi oi-question-mark"></span><h6>Unknown</h6><div class="stat-value">@Stats.UnknownCount</div></div></div>
+        </div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-3"><div class="stat-card stat-soft stat-accent"><h6>Outbound Volume</h6><div class="stat-value text-success">@((Stats.TotalOutboundAmount / 100m).ToString("N2"))</div></div></div>
+            <div class="col-md-3"><div class="stat-card stat-soft stat-primary"><h6>Customers</h6><div class="stat-value">@Stats.CustomerCount</div></div></div>
+            <div class="col-md-3"><div class="stat-card stat-soft stat-info"><h6>Channels</h6><div class="stat-value">@Stats.ChannelCount</div></div></div>
+            <div class="col-md-3"><div class="stat-card stat-soft stat-gold"><h6>Pending Jobs</h6><div class="stat-value">@Stats.PendingJobs</div></div></div>
+        </div>
+    }
+    else if (LoadError is not null)
+    {
+        <div class="alert alert-danger">@LoadError</div>
+        <button class="btn btn-outline-primary btn-sm" @onclick="LoadStats"><span class="oi oi-reload me-1"></span> Retry</button>
+    }
+    else
+    {
+        <p class="loading-text">Loading dashboard stats...</p>
+    }
+    <h5 class="mt-4 mb-2">Quick Access</h5>
+    <div class="row g-3">
+        <div class="col-md-4"><a href="/transactions" class="card action-card"><div class="card-body"><span class="oi oi-list" style="font-size:1.5rem;color:var(--nw-primary)"></span><h6 class="mt-2">Transaction Monitor</h6></div></a></div>
+        <div class="col-md-4"><a href="/settlement" class="card action-card"><div class="card-body"><span class="oi oi-timer" style="font-size:1.5rem;color:var(--nw-primary)"></span><h6 class="mt-2">Settlement Review</h6></div></a></div>
+        <div class="col-md-4"><a href="/repost" class="card action-card"><div class="card-body"><span class="oi oi-action-redo" style="font-size:1.5rem;color:var(--nw-danger)"></span><h6 class="mt-2">Repost Failed</h6></div></a></div>
+        <div class="col-md-4"><a href="/reconciliation" class="card action-card"><div class="card-body"><span class="oi oi-scale" style="font-size:1.5rem;color:var(--nw-accent)"></span><h6 class="mt-2">Reconciliation</h6></div></a></div>
+        <div class="col-md-4"><a href="/channels" class="card action-card"><div class="card-body"><span class="oi oi-key" style="font-size:1.5rem;color:var(--nw-info)"></span><h6 class="mt-2">Channels</h6></div></a></div>
+        <div class="col-md-4"><a href="/users" class="card action-card"><div class="card-body"><span class="oi oi-people" style="font-size:1.5rem;color:var(--nw-gold)"></span><h6 class="mt-2">Users & KYC</h6></div></a></div>
     </div>
 </div>
+
+@code {
+    private AdminDatabaseService.DashboardStatsDto? Stats;
+    private string? LoadError;
+
+    protected override async Task OnInitializedAsync() => await LoadStats();
+
+    private async Task LoadStats()
+    {
+        LoadError = null;
+        try { Stats = await Db.GetDashboardStatsAsync(); }
+        catch (Exception ex) { LoadError = $"Failed to load stats: {ex.Message}"; }
+    }
+}

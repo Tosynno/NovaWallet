@@ -1,20 +1,25 @@
 @page "/repost"
 @using NovaWallet.Admin.Web.Services
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
-@inject ApiClient Api
+@inject AdminDatabaseService Db
 
 <PageTitle>Repost Failed Transfers - NovaWallet Admin</PageTitle>
 
-<div class="container mt-4">
+<div class="container-fluid" style="max-width:640px">
     <h2>Repost Failed Transfers</h2>
     <hr />
     @if (ErrorMessage is not null) { <div class="alert alert-danger">@ErrorMessage</div> }
     @if (SuccessMessage is not null) { <div class="alert alert-success">@SuccessMessage</div> }
-    <div class="mb-3">
-        <label class="form-label">Failed Transfer ID (GUID)</label>
-        <input class="form-control" @bind="TransferIdInput" />
-        <button class="btn btn-danger mt-2" @onclick="RepostTransfer" disabled="@Loading">Repost for Settlement</button>
-    </div>
+    <div class="card"><div class="card-body">
+        <p class="text-muted">Enter a failed outbound Transfer ID to repost it for settlement. The settlement job will be reset to Pending and retried by the worker.</p>
+        <div class="input-group" style="max-width:500px">
+            <input class="form-control monospace" placeholder="Failed Transfer ID (GUID)" @bind="TransferIdInput" />
+            <button class="btn btn-danger" disabled="@Loading" @onclick="RepostTransfer">
+                @if (Loading) { <span class="spinner"></span> } else { <span class="oi oi-action-redo me-1"></span> }
+                @(Loading ? " Reposting..." : " Repost")
+            </button>
+        </div>
+    </div></div>
 </div>
 
 @code {
@@ -28,17 +33,15 @@
         Loading = true; ErrorMessage = null; SuccessMessage = null;
         try
         {
-            var response = await Api.Http.PostAsync($"/api/v1/admin/transfers/{id}/repost", null);
-            if (response.IsSuccessStatusCode)
+            var success = await Db.RepostFailedTransferAsync(id);
+            if (success)
             {
-                var result = await response.Content.ReadFromJsonAsync<RepostResponse>();
-                SuccessMessage = $"Transfer reposted. Status: {result?.Status}";
+                SuccessMessage = "Transfer reposted for settlement successfully.";
+                TransferIdInput = "";
             }
-            else { ErrorMessage = await response.Content.ReadAsStringAsync(); }
+            else ErrorMessage = "Transfer not found, not failed, or not outbound.";
         }
         catch (Exception ex) { ErrorMessage = ex.Message; }
         finally { Loading = false; }
     }
-
-    public sealed class RepostResponse { public string Status { get; set; } = ""; public string Message { get; set; } = ""; }
 }

@@ -109,7 +109,7 @@ public static class IdempotencyFingerprint
 
 public static class DailyOutboundLimitPolicy
 {
-    public const long LimitKobo = 50_000_000; // ₦500,000/day outbound
+    public const long LimitKobo = 50_000_000;
     public static bool IsAllowed(long alreadySentKobo, long requestedKobo) =>
         alreadySentKobo >= 0 && requestedKobo > 0 && alreadySentKobo <= LimitKobo && requestedKobo <= LimitKobo - alreadySentKobo;
 }
@@ -134,7 +134,7 @@ public sealed class FeePolicy
 
 public static class AccountNumberGenerator
 {
-    private const string NovaPrefix = "90"; // NovaWallet NUBAN-style 10-digit account numbers
+    private const string NovaPrefix = "90";
     private static readonly Random Random = new();
 
     public static string Generate()

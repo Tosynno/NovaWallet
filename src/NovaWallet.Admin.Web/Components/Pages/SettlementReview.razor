@@ -1,47 +1,76 @@
 @page "/settlement"
 @using NovaWallet.Admin.Web.Services
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
-@inject ApiClient Api
+@inject AdminDatabaseService Db
 
 <PageTitle>Settlement Review - NovaWallet Admin</PageTitle>
 
-<div class="container mt-4">
+<div class="container-fluid">
     <h2>Settlement Review</h2>
     <hr />
-    <p class="text-muted">Review settlement jobs and their status. Failed transfers can be reposted from the <a href="/repost">Repost Failed</a> page.</p>
-    <div class="card">
-        <div class="card-body">
-            <h5>External Accounts (First Bank Holdings)</h5>
-            @if (Accounts is not null)
-            {
-                <table class="table table-sm">
-                    <thead><tr><th>Account Key</th><th>Bank</th><th>Account Number</th><th>Account Name</th><th>Balance (kobo)</th></tr></thead>
-                    <tbody>
-                        @foreach (var a in Accounts)
-                        {
-                            <tr><td>@a.AccountKey</td><td>@a.BankName</td><td>@a.AccountNumber</td><td>@a.AccountName</td><td>@a.BalanceKobo</td></tr>
-                        }
-                    </tbody>
-                </table>
-            }
-            else if (Loading) { <p class="text-muted">Loading...</p> }
-            else { <p class="text-muted">Click load to view external accounts.</p> }
-            <button class="btn btn-outline-primary btn-sm" @onclick="LoadAccounts">Load Accounts</button>
+    <p class="text-muted">Review external bank accounts and settlement job status. Failed transfers can be reposted from the <a href="/repost">Repost Failed</a> page.</p>
+    @if (LoadError is not null) { <div class="alert alert-danger">@LoadError</div> }
+    <div class="row g-3">
+        <div class="col-md-6">
+            <div class="card"><div class="card-body">
+                <h5><span class="oi oi-bank me-2" style="color:var(--nw-primary)"></span>External Accounts (First Bank)</h5>
+                @if (Accounts is not null)
+                {
+                    <table class="table table-sm table-striped">
+                        <thead><tr><th>Key</th><th>Bank</th><th>Account No</th><th>Name</th><th>Balance (kobo)</th></tr></thead>
+                        <tbody>@foreach (var a in Accounts) { <tr><td class="monospace">@a.AccountKey</td><td>@a.BankName</td><td class="monospace">@a.AccountNumber</td><td>@a.AccountName</td><td>@a.BalanceKobo</td></tr> }</tbody>
+                    </table>
+                }
+                else if (LoadingAccounts) { <p class="loading-text">Loading...</p> }
+                else { <p class="text-muted">Click to load external accounts.</p> }
+                <button class="btn btn-outline-primary btn-sm" disabled="@LoadingAccounts" @onclick="LoadAccounts"><span class="oi oi-reload me-1"></span> @(LoadingAccounts ? "Loading..." : "Load Accounts")</button>
+            </div></div>
+        </div>
+        <div class="col-md-6">
+            <div class="card"><div class="card-body">
+                <h5><span class="oi oi-timer me-2" style="color:var(--nw-primary)"></span>Settlement Jobs</h5>
+                @if (Jobs is not null)
+                {
+                    <table class="table table-sm table-striped">
+                        <thead><tr><th>ID</th><th>Transfer</th><th>Status</th><th>Attempts</th><th>Amount</th><th>Next Attempt</th></tr></thead>
+                        <tbody>@foreach (var j in Jobs) { <tr><td>@j.Id</td><td><span class="monospace">@(j.TransferId.ToString()[..8])...</span></td><td><span class="badge @(j.Status == "Succeeded" ? "bg-success" : j.Status == "Failed" || j.Status == "DeadLetter" ? "bg-danger" : "bg-warning")">@j.Status</span></td><td>@j.AttemptCount</td><td>@j.AmountKobo</td><td class="small">@j.NextAttemptAt</td></tr> }</tbody>
+                    </table>
+                }
+                else if (LoadingJobs) { <p class="loading-text">Loading...</p> }
+                else { <p class="text-muted">Click to load settlement jobs.</p> }
+                <button class="btn btn-outline-primary btn-sm" disabled="@LoadingJobs" @onclick="LoadJobs"><span class="oi oi-reload me-1"></span> @(LoadingJobs ? "Loading..." : "Load Jobs")</button>
+            </div></div>
         </div>
     </div>
 </div>
 
 @code {
-    private List<ExternalAccountDto>? Accounts;
-    private bool Loading;
+    private List<AdminDatabaseService.ExternalAccountDto>? Accounts;
+    private List<AdminDatabaseService.SettlementJobDto>? Jobs;
+    private bool LoadingAccounts;
+    private bool LoadingJobs;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAccounts();
+        await LoadJobs();
+    }
+
+    private string? LoadError;
 
     private async Task LoadAccounts()
     {
-        Loading = true;
-        try { Accounts = await Api.Http.GetFromJsonAsync<List<ExternalAccountDto>>("/api/v1/admin/external-accounts"); }
-        catch { }
-        finally { Loading = false; }
+        LoadingAccounts = true; LoadError = null;
+        try { Accounts = await Db.GetExternalAccountsAsync(); }
+        catch (Exception ex) { LoadError = $"Failed to load external accounts: {ex.Message}"; }
+        finally { LoadingAccounts = false; }
     }
 
-    public sealed class ExternalAccountDto { public string AccountKey { get; set; } = ""; public string BankName { get; set; } = ""; public string AccountNumber { get; set; } = ""; public string AccountName { get; set; } = ""; public long BalanceKobo { get; set; } }
+    private async Task LoadJobs()
+    {
+        LoadingJobs = true; LoadError = null;
+        try { Jobs = await Db.GetSettlementJobsAsync(50); }
+        catch (Exception ex) { LoadError = $"Failed to load settlement jobs: {ex.Message}"; }
+        finally { LoadingJobs = false; }
+    }
 }

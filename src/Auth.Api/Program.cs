@@ -45,8 +45,6 @@ app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" })).AllowAnonymous();
 
-// === JWT Token Issuance ===
-// Authenticates a channel using AppKey + AppSecret and returns a JWT with configurable expiry (default 5 minutes).
 app.MapPost("/api/v1/auth/token", async (TokenRequest req, AppDbContext db, IConfiguration cfg, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(req.AppKey) || string.IsNullOrWhiteSpace(req.AppSecret))
@@ -75,7 +73,6 @@ app.MapPost("/api/v1/auth/token", async (TokenRequest req, AppDbContext db, ICon
     return Results.Ok(new { token = new JwtSecurityTokenHandler().WriteToken(token), expiresInSeconds = expiryMinutes * 60 });
 }).AllowAnonymous();
 
-// === Channel Management (Admin only) ===
 app.MapPost("/api/v1/channels", async (CreateChannelRequest req, AppDbContext db, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(req.ChannelKey) || string.IsNullOrWhiteSpace(req.ChannelName))
@@ -126,7 +123,6 @@ app.MapPut("/api/v1/channels/{channelKey}/status", async (string channelKey, Upd
     return Results.Ok(new { channel.ChannelKey, channel.Status });
 }).RequireAuthorization("AdminOrProductOwner");
 
-// === User Management ===
 app.MapPost("/api/v1/users", async (CreateUserRequest req, AppDbContext db, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(req.CustomerId) || string.IsNullOrWhiteSpace(req.Email))
@@ -155,7 +151,6 @@ app.MapGet("/api/v1/users/by-customer/{customerId}", async (string customerId, A
     return user is null ? Results.NotFound(new { code = "user.not_found", message = "User not found." }) : Results.Ok(new { user.Id, user.CustomerId, user.Email, user.PhoneNumber, user.FirstName, user.LastName, user.KycStatus, user.CreatedAt });
 }).RequireAuthorization();
 
-// === KYC Management ===
 app.MapPost("/api/v1/users/{userId:long}/kyc", async (long userId, SubmitKycRequest req, AppDbContext db, CancellationToken ct) =>
 {
     var user = await db.Users.SingleOrDefaultAsync(x => x.Id == userId, ct);

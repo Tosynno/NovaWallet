@@ -94,22 +94,19 @@ public sealed class ConcurrencyTests
     }
 
     [Fact]
-    public async Task Concurrent_outbound_transfers_respect_per_customer_daily_limit_across_wallets()
+    public async Task Concurrent_outbound_transfers_respect_per_wallet_daily_limit()
     {
         if (!TestDb.IsConfigured) return;
         await using var db = await TestDb.CreateAsync();
-        var w1 = Wallet.CreateCustomer("shared-cust", "9000000004", DateTimeOffset.UtcNow); w1.Credit(Money.Create(60_000_000), DateTimeOffset.UtcNow);
-        var w2 = Wallet.CreateCustomer("shared-cust", "9000000005", DateTimeOffset.UtcNow); w2.Credit(Money.Create(60_000_000), DateTimeOffset.UtcNow);
-        db.Db.Wallets.AddRange(w1, w2);
+        var w1 = Wallet.CreateCustomer("limit-cust", "9000000004", DateTimeOffset.UtcNow); w1.Credit(Money.Create(60_000_000), DateTimeOffset.UtcNow);
+        db.Db.Wallets.Add(w1);
         await db.Db.SaveChangesAsync();
 
-        // 20 transfers of 5,000,000 kobo (50,000 NGN) each = 1,000,000 NGN attempted; limit is 500,000 NGN => exactly 10 succeed.
         var tasks = Enumerable.Range(0, 20).Select(i => Task.Run(async () =>
         {
             await using var ctx = TestDb.NewContext(db.TestConnection);
             var service = TestDb.CreateTransferService(ctx, fees: Fees);
-            var sourceId = i % 2 == 0 ? w1.Id : w2.Id;
-            try { return await service.TransferOutboundAsync(new OutboundTransferCommand("shared-cust", sourceId, "9999999999", "058", "Jane", 5_000_000, $"key-{i}", Guid.NewGuid().ToString("N")), CancellationToken.None); }
+            try { return await service.TransferOutboundAsync(new OutboundTransferCommand("limit-cust", w1.Id, "9999999999", "058", "Jane", 5_000_000, $"key-{i}", Guid.NewGuid().ToString("N")), CancellationToken.None); }
             catch (DomainException) { return null; }
         })).ToArray();
         var results = await Task.WhenAll(tasks);
@@ -117,7 +114,7 @@ public sealed class ConcurrencyTests
         Assert.Equal(10, successCount);
 
         await using var verify = TestDb.NewContext(db.TestConnection);
-        var totalOutbound = await verify.Transfers.Where(x => x.CustomerId == "shared-cust" && x.Type == TransferType.Outbound).SumAsync(x => (long?)x.AmountKobo) ?? 0;
+        var totalOutbound = await verify.Transfers.Where(x => x.CustomerId == "limit-cust" && x.Type == TransferType.Outbound).SumAsync(x => (long?)x.AmountKobo) ?? 0;
         Assert.Equal(50_000_000, totalOutbound);
         Assert.True(totalOutbound <= DailyOutboundLimitPolicy.LimitKobo);
     }

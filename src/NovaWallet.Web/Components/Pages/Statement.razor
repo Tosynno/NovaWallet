@@ -5,34 +5,47 @@
 
 <PageTitle>Statement - NovaWallet</PageTitle>
 
-<div class="container mt-4">
+<div class="container-fluid">
     <h2>Transaction Statement</h2>
     <hr />
-    <div class="mb-3 d-flex gap-2 align-items-end">
-        <div><label class="form-label">Wallet ID</label><input class="form-control" @bind="WalletIdInput" /></div>
-        <div><label class="form-label">Page</label><input type="number" class="form-control" style="width:80px" @bind="Page" /></div>
-        <div><label class="form-label">Page Size</label><input type="number" class="form-control" style="width:80px" @bind="PageSize" /></div>
-        <button class="btn btn-primary" @onclick="LoadStatement">Load</button>
-    </div>
+    <div class="card mb-3"><div class="card-body">
+        <div class="d-flex gap-3 align-items-end flex-wrap">
+            <div class="flex-grow-1" style="min-width:280px">
+                <label class="form-label">Wallet ID</label>
+                <input class="form-control monospace" placeholder="00000000-0000-0000-0000-000000000000" @bind="WalletIdInput" />
+            </div>
+            <div><label class="form-label">Page</label><input type="number" class="form-control" style="width:90px" @bind="Page" /></div>
+            <div><label class="form-label">Size</label><input type="number" class="form-control" style="width:90px" @bind="PageSize" /></div>
+            <button class="btn btn-primary" @onclick="LoadStatement"><span class="oi oi-list me-1"></span> Load</button>
+        </div>
+    </div></div>
 
     @if (Items is not null)
     {
-        <table class="table table-striped">
-            <thead><tr><th>Transfer ID</th><th>Direction</th><th>Amount (kobo)</th><th>Leg</th><th>Date</th></tr></thead>
-            <tbody>
-                @foreach (var item in Items)
-                {
-                    <tr><td>@item.TransferId</td><td>@item.Direction</td><td>@item.AmountKobo</td><td>@item.Leg</td><td>@item.CreatedAt</td></tr>
-                }
-            </tbody>
-        </table>
-        <div class="d-flex gap-2">
-            <button class="btn btn-outline-secondary btn-sm" disabled="@(Page <= 1)" @onclick='async () => { Page--; await LoadStatement(); }'>Previous</button>
-            <span class="align-self-center">Page @Page</span>
-            <button class="btn btn-outline-secondary btn-sm" disabled="@(Items is null || Items.Count < PageSize)" @onclick='async () => { Page++; await LoadStatement(); }'>Next</button>
+        <div class="card"><div class="card-body p-0">
+            <table class="table table-striped table-hover mb-0">
+                <thead><tr><th>Transfer ID</th><th>Direction</th><th>Amount (kobo)</th><th>Leg</th><th>Date</th></tr></thead>
+                <tbody>
+                    @foreach (var item in Items)
+                    {
+                        <tr>
+                            <td><span class="monospace">@(item.TransferId?.ToString()[..8] + "...")</span></td>
+                            <td><span class="badge @(item.Direction == "Debit" ? "bg-danger" : "bg-success")">@item.Direction</span></td>
+                            <td>@item.AmountKobo</td>
+                            <td>@item.Leg</td>
+                            <td class="text-muted small">@item.CreatedAt</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div></div>
+        <div class="d-flex gap-2 mt-3 justify-content-center align-items-center">
+            <button class="btn btn-outline-primary btn-sm" disabled="@(Page <= 1)" @onclick='async () => { Page--; await LoadStatement(); }'><span class="oi oi-chevron-left"></span> Previous</button>
+            <span class="text-muted small">Page @Page</span>
+            <button class="btn btn-outline-primary btn-sm" disabled="@(Items is null || Items.Count < PageSize)" @onclick='async () => { Page++; await LoadStatement(); }'>Next <span class="oi oi-chevron-right"></span></button>
         </div>
     }
-    @if (ErrorMessage is not null) { <div class="alert alert-danger">@ErrorMessage</div> }
+    @if (ErrorMessage is not null) { <div class="alert alert-danger mt-2">@ErrorMessage</div> }
 </div>
 
 @code {
@@ -46,10 +59,7 @@
     {
         if (!Guid.TryParse(WalletIdInput, out var id)) { ErrorMessage = "Invalid Wallet ID"; return; }
         ErrorMessage = null;
-        try
-        {
-            Items = await Api.Http.GetFromJsonAsync<List<StatementItem>>($"/api/v1/wallets/{id}/transactions?page={Page}&pageSize={PageSize}");
-        }
+        try { Items = await Api.GetAsync<List<StatementItem>>($"/api/v1/wallets/{id}/transactions?page={Page}&pageSize={PageSize}"); }
         catch (Exception ex) { ErrorMessage = ex.Message; }
     }
 

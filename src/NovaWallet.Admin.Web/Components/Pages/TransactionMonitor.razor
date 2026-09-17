@@ -1,45 +1,77 @@
 @page "/transactions"
 @using NovaWallet.Admin.Web.Services
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
-@inject ApiClient Api
+@inject AdminDatabaseService Db
 
 <PageTitle>Transaction Monitor - NovaWallet Admin</PageTitle>
 
-<div class="container mt-4">
+<div class="container-fluid">
     <h2>Transaction Monitor</h2>
     <hr />
-    <div class="mb-3"><input class="form-control" placeholder="Enter Transfer ID (GUID)" @bind="TransferIdInput" /><button class="btn btn-primary mt-2" @onclick="LookupTransfer">Lookup</button></div>
+    <div class="mb-3 d-flex gap-2">
+        <div class="input-group" style="max-width:500px">
+            <input class="form-control monospace" placeholder="Transfer ID (GUID)" @bind="TransferIdInput" />
+            <button class="btn btn-outline-primary" @onclick="LookupTransfer"><span class="oi oi-search me-1"></span> Lookup</button>
+        </div>
+        <button class="btn btn-outline-primary" @onclick="LoadRecent"><span class="oi oi-list me-1"></span> Load Recent</button>
+    </div>
     @if (ErrorMessage is not null) { <div class="alert alert-danger">@ErrorMessage</div> }
+
     @if (Transfer is not null)
     {
-        <table class="table table-striped">
-            <tr><th>Transfer ID</th><td>@Transfer.Id</td></tr>
-            <tr><th>Type</th><td>@Transfer.Type</td></tr>
-            <tr><th>Status</th><td>@Transfer.Status</td></tr>
-            <tr><th>Amount (kobo)</th><td>@Transfer.AmountKobo</td></tr>
-            <tr><th>Fee (kobo)</th><td>@Transfer.FeeKobo</td></tr>
-            <tr><th>VAT (kobo)</th><td>@Transfer.VatKobo</td></tr>
-            <tr><th>Total Debit (kobo)</th><td>@Transfer.TotalDebitKobo</td></tr>
-            <tr><th>Reference</th><td>@Transfer.Reference</td></tr>
-            <tr><th>External Ref</th><td>@Transfer.ExternalReference</td></tr>
-            <tr><th>Created</th><td>@Transfer.CreatedAt</td></tr>
-            <tr><th>Updated</th><td>@Transfer.UpdatedAt</td></tr>
-        </table>
+        <div class="card mb-3"><div class="card-body">
+            <h5>Transfer Details</h5>
+            <table class="table table-sm">
+                <tr><th style="width:180px">Transfer ID</th><td><span class="monospace">@Transfer.Id</span></td></tr>
+                <tr><th>Type</th><td><span class="badge bg-primary">@Transfer.Type</span></td></tr>
+                <tr><th>Status</th><td><span class="badge @(Transfer.Status == "Settled" ? "bg-success" : Transfer.Status == "Failed" ? "bg-danger" : "bg-warning")">@Transfer.Status</span></td></tr>
+                <tr><th>Amount (kobo)</th><td>@Transfer.AmountKobo</td></tr>
+                <tr><th>Fee / VAT</th><td>@Transfer.FeeKobo / @Transfer.VatKobo</td></tr>
+                <tr><th>Total Debit</th><td>@Transfer.TotalDebitKobo</td></tr>
+                <tr><th>Reference</th><td><span class="monospace">@Transfer.Reference</span></td></tr>
+                <tr><th>External Ref</th><td><span class="monospace">@(Transfer.ExternalReference ?? "-")</span></td></tr>
+                <tr><th>Destination</th><td>@(Transfer.DestinationAccountNumber ?? "-") (@(Transfer.DestinationBankCode ?? "-"))</td></tr>
+                <tr><th>Customer</th><td>@Transfer.CustomerId</td></tr>
+                <tr><th>Created</th><td>@Transfer.CreatedAt</td></tr>
+            </table>
+        </div></div>
+    }
+
+    @if (RecentTransfers is not null)
+    {
+        <div class="card"><div class="card-body p-0">
+            <table class="table table-striped table-hover mb-0">
+                <thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Amount</th><th>Customer</th><th>Reference</th><th>Created</th></tr></thead>
+                <tbody>
+                    @foreach (var t in RecentTransfers)
+                    {
+                        <tr><td><span class="monospace">@(t.Id.ToString()[..8])...</span></td><td><span class="badge bg-primary">@t.Type</span></td><td><span class="badge @(t.Status == "Settled" ? "bg-success" : t.Status == "Failed" ? "bg-danger" : "bg-warning")">@t.Status</span></td><td>@t.AmountKobo</td><td>@t.CustomerId</td><td class="monospace">@t.Reference</td><td class="text-muted small">@t.CreatedAt</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div></div>
     }
 </div>
 
 @code {
     private string TransferIdInput = "";
-    private TransferDetail? Transfer;
+    private AdminDatabaseService.TransferDto? Transfer;
+    private List<AdminDatabaseService.TransferDto>? RecentTransfers;
     private string? ErrorMessage;
+
+    protected override async Task OnInitializedAsync() => await LoadRecent();
 
     private async Task LookupTransfer()
     {
         if (!Guid.TryParse(TransferIdInput, out var id)) { ErrorMessage = "Invalid GUID"; return; }
         ErrorMessage = null;
-        try { Transfer = await Api.Http.GetFromJsonAsync<TransferDetail>($"/api/v1/transfers/{id}"); }
-        catch { ErrorMessage = "Transfer not found or access denied."; }
+        try { Transfer = await Db.GetTransferByIdAsync(id); RecentTransfers = null; }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
     }
 
-    public sealed class TransferDetail { public Guid Id { get; set; } public string Type { get; set; } = ""; public string Status { get; set; } = ""; public long AmountKobo { get; set; } public long FeeKobo { get; set; } public long VatKobo { get; set; } public long TotalDebitKobo { get; set; } public string Reference { get; set; } = ""; public string? ExternalReference { get; set; } public DateTime CreatedAt { get; set; } public DateTime UpdatedAt { get; set; } }
+    private async Task LoadRecent()
+    {
+        try { RecentTransfers = await Db.GetRecentTransfersAsync(50); Transfer = null; ErrorMessage = null; }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+    }
 }

@@ -1,0 +1,45 @@
+@page "/users"
+@using NovaWallet.Admin.Web.Services
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject AdminDatabaseService Db
+
+<PageTitle>Users & KYC - NovaWallet Admin</PageTitle>
+
+<div class="container-fluid">
+    <h2>Users & KYC</h2>
+    <hr />
+    @if (LoadError is not null)
+    {
+        <div class="alert alert-danger">@LoadError</div>
+        <button class="btn btn-outline-primary btn-sm" @onclick="OnInitializedAsync"><span class="oi oi-reload me-1"></span> Retry</button>
+    }
+    @if (UserList is not null)
+    {
+        <div class="card"><div class="card-body p-0">
+            <table class="table table-striped table-hover mb-0">
+                <thead><tr><th>ID</th><th>Customer ID</th><th>Email</th><th>Name</th><th>Phone</th><th>KYC Status</th><th>Created</th></tr></thead>
+                <tbody>
+                    @foreach (var u in UserList)
+                    {
+                        <tr><td>@u.Id</td><td class="monospace">@u.CustomerId</td><td>@u.Email</td><td>@u.FirstName @u.LastName</td><td>@(u.PhoneNumber ?? "-")</td><td><span class="badge @(u.KycStatus == "Verified" ? "bg-success" : u.KycStatus == "Rejected" ? "bg-danger" : "bg-warning")">@u.KycStatus</span></td><td class="text-muted small">@u.CreatedAt</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div></div>
+    }
+    else if (Loading) { <p class="loading-text">Loading users...</p> }
+</div>
+
+@code {
+    private List<AdminDatabaseService.UserDto>? UserList;
+    private bool Loading;
+    private string? LoadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Loading = true;
+        try { UserList = await Db.GetUsersAsync(50); }
+        catch (Exception ex) { LoadError = $"Failed to load users: {ex.Message}"; }
+        finally { Loading = false; }
+    }
+}

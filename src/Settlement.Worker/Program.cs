@@ -58,7 +58,6 @@ public sealed class SettlementBackgroundService(IServiceScopeFactory scopeFactor
         foreach (var message in unpublished) message.MarkPublished(now);
         if (unpublished.Count > 0) await db.SaveChangesAsync(ct);
 
-        // 1. Dispatch Pending jobs to the NIP rail.
         var claimable = await db.SettlementJobs
             .Where(x => x.Status == SettlementStatus.Pending
                 || (x.Status == SettlementStatus.Failed && x.NextAttemptAt <= now)
@@ -101,7 +100,7 @@ public sealed class SettlementBackgroundService(IServiceScopeFactory scopeFactor
                     await ReverseOutboundAsync(db, transfer, now, ct);
                     transfer.MarkFailed(now);
                 }
-                else // Unknown — timeout or indeterminate response. Do NOT reverse.
+                else
                 {
                     if (railResult.ExternalReference is not null)
                         transfer.SetExternalReference(railResult.ExternalReference, now);
@@ -118,7 +117,6 @@ public sealed class SettlementBackgroundService(IServiceScopeFactory scopeFactor
             }
         }
 
-        // 2. Status-query loop for Unknown transfers (NIP Transaction Status Query).
         var unknowns = await db.Transfers
             .Where(x => x.Type == TransferType.Outbound && x.Status == TransferStatus.Unknown && x.ExternalReference != null)
             .OrderBy(x => x.UpdatedAt).Take(20).ToListAsync(ct);
@@ -143,7 +141,6 @@ public sealed class SettlementBackgroundService(IServiceScopeFactory scopeFactor
                     var job = await db.SettlementJobs.SingleOrDefaultAsync(x => x.TransferId == transfer.Id, ct);
                     if (job is not null) job.Fail("NIP status query: failed", now, Backoff, job.AttemptCount >= MaxAttempts);
                 }
-                // Unknown: leave as-is; will be re-queried on the next cycle.
 
                 await db.SaveChangesAsync(ct);
                 await tx.CommitAsync(ct);

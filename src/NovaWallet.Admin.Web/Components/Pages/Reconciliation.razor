@@ -1,42 +1,51 @@
 @page "/reconciliation"
 @using NovaWallet.Admin.Web.Services
+@using NovaWallet.Application
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
-@inject ApiClient Api
+@inject IReconciliationService Recon
 
 <PageTitle>Reconciliation - NovaWallet Admin</PageTitle>
 
-<div class="container mt-4">
+<div class="container-fluid">
     <h2>Reconciliation Reports</h2>
     <hr />
     <div class="d-flex gap-2 mb-3">
-        <button class="btn btn-primary" @onclick="RunReconciliation" disabled="@Loading">Run Reconciliation (Today)</button>
-        <button class="btn btn-outline-primary" @onclick="LoadReports" disabled="@Loading">Load Reports</button>
+        <button class="btn btn-primary" @onclick="RunReconciliation" disabled="@Loading"><span class="oi oi-scale me-1"></span> Run Reconciliation (Today)</button>
+        <button class="btn btn-outline-primary" @onclick="LoadReports" disabled="@Loading"><span class="oi oi-reload me-1"></span> Reload</button>
     </div>
     @if (ErrorMessage is not null) { <div class="alert alert-danger">@ErrorMessage</div> }
     @if (SuccessMessage is not null) { <div class="alert alert-success">@SuccessMessage</div> }
     @if (Reports is not null)
     {
-        <table class="table table-striped">
-            <thead><tr><th>WAT Date</th><th>Status</th><th>Outbound Count</th><th>Outbound Amount (kobo)</th><th>Run By</th><th>Created</th></tr></thead>
-            <tbody>
-                @foreach (var r in Reports)
-                {
-                    <tr><td>@r.WatDate</td><td><span class="badge @(r.Status == "Balanced" ? "bg-success" : "bg-danger")">@r.Status</span></td><td>@r.TotalOutboundCount</td><td>@r.TotalOutboundAmountKobo</td><td>@r.RunBy</td><td>@r.CreatedAt</td></tr>
-                }
-            </tbody>
-        </table>
+        <div class="card"><div class="card-body p-0">
+            <table class="table table-striped table-hover mb-0">
+                <thead><tr><th>WAT Date</th><th>Status</th><th>Outbound Count</th><th>Outbound Amount (kobo)</th><th>Created</th></tr></thead>
+                <tbody>
+                    @foreach (var r in Reports)
+                    {
+                        <tr><td>@r.WatDate</td><td><span class="badge @(r.Status.ToString() == "Balanced" ? "bg-success" : "bg-danger")">@r.Status</span></td><td>@r.TotalOutboundCount</td><td>@r.TotalOutboundAmountKobo</td><td class="text-muted small">@r.CreatedAt</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div></div>
+    }
+    else if (Loading)
+    {
+        <p class="loading-text">Loading reports...</p>
     }
 </div>
 
 @code {
-    private List<ReconciliationSummary>? Reports;
+    private List<ReconciliationReportSummary>? Reports;
     private bool Loading;
     private string? ErrorMessage, SuccessMessage;
+
+    protected override async Task OnInitializedAsync() => await LoadReports();
 
     private async Task LoadReports()
     {
         Loading = true; ErrorMessage = null;
-        try { Reports = await Api.Http.GetFromJsonAsync<List<ReconciliationSummary>>("/api/v1/admin/reconciliation?page=1&pageSize=25"); }
+        try { Reports = (await Recon.ListReconciliationsAsync(1, 25, CancellationToken.None)).ToList(); }
         catch (Exception ex) { ErrorMessage = ex.Message; }
         finally { Loading = false; }
     }
@@ -46,17 +55,11 @@
         Loading = true; ErrorMessage = null; SuccessMessage = null;
         try
         {
-            var response = await Api.Http.PostAsync("/api/v1/admin/reconciliation/run", null);
-            if (response.IsSuccessStatusCode)
-            {
-                SuccessMessage = "Reconciliation completed successfully.";
-                await LoadReports();
-            }
-            else { ErrorMessage = await response.Content.ReadAsStringAsync(); }
+            var result = await Recon.RunReconciliationAsync(null, "ADMIN", CancellationToken.None);
+            SuccessMessage = $"Reconciliation completed: {result.Status}";
+            await LoadReports();
         }
         catch (Exception ex) { ErrorMessage = ex.Message; }
         finally { Loading = false; }
     }
-
-    public sealed class ReconciliationSummary { public string WatDate { get; set; } = ""; public string Status { get; set; } = ""; public int TotalOutboundCount { get; set; } public long TotalOutboundAmountKobo { get; set; } public string RunBy { get; set; } = ""; public DateTime CreatedAt { get; set; } }
 }

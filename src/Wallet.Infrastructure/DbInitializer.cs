@@ -9,7 +9,6 @@ public static class DbInitializer
 
     public static async Task InitializeAsync(AppDbContext db, CancellationToken ct)
     {
-        // Serialize initialization across concurrent services (Wallet.Api, Settlement.Worker, Auth.Api all start at once).
         await Lock.WaitAsync(ct);
         try
         {
@@ -23,17 +22,12 @@ public static class DbInitializer
 
     private static async Task InitializeCoreAsync(AppDbContext db, CancellationToken ct)
     {
-        // EnsureCreatedAsync only works on a fresh database with no tables.
-        // If the DB exists with an older schema (missing new tables like Channels, ExternalAccounts, etc.),
-        // it throws. We detect this, drop the stale DB, and recreate with the current schema.
         try
         {
             await db.Database.EnsureCreatedAsync(ct);
         }
         catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2714 || ex.Message.Contains("already an object"))
         {
-            // 2714 = "There is already an object named 'X' in the database."
-            // The DB has an older schema. Drop and recreate with the current model.
             await db.Database.EnsureDeletedAsync(ct);
             await db.Database.EnsureCreatedAsync(ct);
         }
@@ -71,7 +65,6 @@ public static class DbInitializer
         }
         catch (DbUpdateException)
         {
-            // Another service inserted this row concurrently. Clear the tracked entity and continue.
             db.ChangeTracker.Clear();
         }
     }
@@ -101,7 +94,6 @@ public static class DbInitializer
         }
         catch (DbUpdateException)
         {
-            // Another service inserted this row concurrently. Clear the tracked entity and continue.
             db.ChangeTracker.Clear();
         }
     }

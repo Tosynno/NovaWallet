@@ -1,45 +1,53 @@
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace NovaWallet.Admin.Web.Services;
 
 public sealed class AuthService
 {
-    private readonly HttpClient _http;
-    public string? Token { get; set; }
-    public string? ChannelKey { get; set; }
-    public bool IsAuthenticated => !string.IsNullOrWhiteSpace(Token);
+    private readonly AdminCredentialOptions _creds;
+    public string? Username { get; set; }
+    public string? DisplayName { get; set; }
+    public bool IsAuthenticated { get; set; }
 
-    public AuthService(HttpClient http) => _http = http;
-
-    public void SetToken(string token, string channelKey)
+    public AuthService(IConfiguration config)
     {
-        Token = token;
-        ChannelKey = channelKey;
-        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        _creds = config.GetSection("AdminCredentials").Get<AdminCredentialOptions>() ?? new AdminCredentialOptions();
+    }
+
+    public void SetAuthenticated(string username)
+    {
+        Username = username;
+        DisplayName = username;
+        IsAuthenticated = true;
     }
 
     public void Logout()
     {
-        Token = null;
-        ChannelKey = null;
-        _http.DefaultRequestHeaders.Authorization = null;
+        Username = null;
+        DisplayName = null;
+        IsAuthenticated = false;
     }
 
-    public async Task<bool> LoginAsync(string appKey, string appSecret)
+    public bool Validate(string username, string password)
     {
-        var response = await _http.PostAsJsonAsync("/api/v1/auth/token", new { AppKey = appKey, AppSecret = appSecret });
-        if (!response.IsSuccessStatusCode) return false;
-        var result = await response.Content.ReadFromJsonAsync<TokenResponse>();
-        if (result is null) return false;
-        SetToken(result.Token, "");
-        return true;
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+            return false;
+        var userMatch = CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(username.ToLowerInvariant()),
+            Encoding.UTF8.GetBytes(_creds.Username.ToLowerInvariant()));
+        var passMatch = CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(password),
+            Encoding.UTF8.GetBytes(_creds.Password));
+        return userMatch && passMatch;
     }
-
-    public record TokenResponse(string Token, int ExpiresInSeconds);
 }
 
-public sealed class ApiClient(HttpClient http) { public HttpClient Http { get; } = http; }
+public sealed class AdminCredentialOptions
+{
+    public string Username { get; set; } = "admin";
+    public string Password { get; set; } = "";
+}
 
 public sealed class CustomAuthStateProvider(AuthService auth) : Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider
 {
@@ -49,8 +57,9 @@ public sealed class CustomAuthStateProvider(AuthService auth) : Microsoft.AspNet
         {
             var identity = new System.Security.Claims.ClaimsIdentity(new[]
             {
-                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, auth.ChannelKey ?? "admin"),
-            }, "jwt");
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, auth.Username ?? "admin"),
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "admin"),
+            }, "local");
             return Task.FromResult(new Microsoft.AspNetCore.Components.Authorization.AuthenticationState(new System.Security.Claims.ClaimsPrincipal(identity)));
         }
         return Task.FromResult(new Microsoft.AspNetCore.Components.Authorization.AuthenticationState(new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity())));
