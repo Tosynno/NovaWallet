@@ -1,0 +1,17 @@
+﻿@using NovaWallet.Admin.Web.Services
+@inject AuthService Auth
+
+<div class="nav-menu">
+    <a class="nav-link" href="">
+        <span class="oi oi-home" aria-hidden="true"></span> Home
+    </a>
+    @if (Auth.IsAuthenticated)
+    {
+        <a class="nav-link" href="dashboard"><span class="oi oi-dashboard"></span> Dashboard</a>
+        <a class="nav-link" href="transactions"><span class="oi oi-list"></span> Transactions</a>
+        <a class="nav-link" href="settlement"><span class="oi oi-timer"></span> Settlement</a>
+        <a class="nav-link" href="repost"><span class="oi oi-action-redo"></span> Repost Failed</a>
+        <a class="nav-link" href="reconciliation"><span class="oi oi-scale"></span> Reconciliation</a>
+        <a class="nav-link" href="channels"><span class="oi oi-key"></span> Channels</a>
+    }
+</div>

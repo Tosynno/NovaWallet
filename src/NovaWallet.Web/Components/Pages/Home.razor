@@ -1,0 +1,17 @@
+﻿@page "/"
+@inject NavigationManager Nav
+
+<PageTitle>NovaWallet</PageTitle>
+
+<div class="container text-center mt-5">
+    <h1>NovaWallet</h1>
+    <p class="lead">Simplified wallet ledger for the Nigerian fintech ecosystem.</p>
+    <a href="/login" class="btn btn-primary btn-lg mt-3">Get Started</a>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/login", forceLoad: true);
+    }
+}

@@ -1,0 +1,19 @@
+@page "/dashboard"
+@using NovaWallet.Admin.Web.Services
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ApiClient Api
+
+<PageTitle>Dashboard - NovaWallet Admin</PageTitle>
+
+<div class="container mt-4">
+    <h2>Admin Dashboard</h2>
+    <hr />
+    <div class="row g-4">
+        <div class="col-md-3"><div class="card text-white bg-primary"><div class="card-body"><h5>External Accounts</h5><a href="/external-accounts" class="text-white">View →</a></div></div></div>
+        <div class="col-md-3"><div class="card text-white bg-success"><div class="card-body"><h5>Reconciliation</h5><a href="/reconciliation" class="text-white">View →</a></div></div></div>
+        <div class="col-md-3"><div class="card text-white bg-warning"><div class="card-body"><h5>Settlement Review</h5><a href="/settlement" class="text-white">View →</a></div></div></div>
+        <div class="col-md-3"><div class="card text-white bg-danger"><div class="card-body"><h5>Repost Failed</h5><a href="/repost" class="text-white">View →</a></div></div></div>
+        <div class="col-md-3"><div class="card text-white bg-info"><div class="card-body"><h5>Transactions</h5><a href="/transactions" class="text-white">Monitor →</a></div></div></div>
+        <div class="col-md-3"><div class="card text-white bg-secondary"><div class="card-body"><h5>Channels</h5><a href="/channels" class="text-white">Manage →</a></div></div></div>
+    </div>
+</div>

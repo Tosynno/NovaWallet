@@ -1,0 +1,95 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Your_Strong_Password123!"
+    ports: ["1433:1433"]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -C || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  wallet-api:
+    build:
+      context: .
+      dockerfile: src/Wallet.Api/Dockerfile
+    environment:
+      ConnectionStrings__LedgerDb: "Server=sqlserver;Database=Novawallet;User Id=sa;Password=Your_Strong_Password123!;TrustServerCertificate=True;Encrypt=True"
+      Jwt__Issuer: NovaWallet
+      Jwt__Audience: NovaWallet.Public
+      Jwt__Key: development-only-key-change-this-to-a-secret-store-value-1234567890
+      ASPNETCORE_ENVIRONMENT: Development
+    depends_on:
+      sqlserver: { condition: service_healthy }
+    expose: ["8080"]
+    restart: on-failure
+
+  settlement-worker:
+    build:
+      context: .
+      dockerfile: src/Settlement.Worker/Dockerfile
+    environment:
+      ConnectionStrings__LedgerDb: "Server=sqlserver;Database=Novawallet;User Id=sa;Password=Your_Strong_Password123!;TrustServerCertificate=True;Encrypt=True"
+    depends_on:
+      sqlserver: { condition: service_healthy }
+    restart: on-failure
+
+  auth-api:
+    build:
+      context: .
+      dockerfile: src/Auth.Api/Dockerfile
+    environment:
+      ConnectionStrings__LedgerDb: "Server=sqlserver;Database=Novawallet;User Id=sa;Password=Your_Strong_Password123!;TrustServerCertificate=True;Encrypt=True"
+      Jwt__Issuer: NovaWallet
+      Jwt__Audience: NovaWallet.Public
+      Jwt__Key: development-only-key-change-this-to-a-secret-store-value-1234567890
+      Jwt__ExpiryMinutes: "5"
+      ASPNETCORE_ENVIRONMENT: Development
+    depends_on:
+      sqlserver: { condition: service_healthy }
+    expose: ["8080"]
+    restart: on-failure
+
+  proxy-api:
+    build:
+      context: .
+      dockerfile: src/Proxy.Api/Dockerfile
+    environment:
+      Jwt__Issuer: NovaWallet
+      Jwt__Audience: NovaWallet.Public
+      Jwt__Key: development-only-key-change-this-to-a-secret-store-value-1234567890
+      Swagger__Enabled: "true"
+      ReverseProxy__Clusters__wallet-api__Destinations__wallet__Address: http://wallet-api:8080
+      ReverseProxy__Clusters__auth-api__Destinations__auth__Address: http://auth-api:8080
+      ASPNETCORE_ENVIRONMENT: Development
+    depends_on:
+      - wallet-api
+      - auth-api
+    ports: ["8080:8080"]
+    restart: on-failure
+
+  web:
+    build:
+      context: .
+      dockerfile: src/NovaWallet.Web/Dockerfile
+    environment:
+      ApiBaseUrl: http://proxy-api:8080
+      ASPNETCORE_ENVIRONMENT: Development
+    depends_on:
+      - proxy-api
+    expose: ["8080"]
+    restart: on-failure
+
+  admin-web:
+    build:
+      context: .
+      dockerfile: src/NovaWallet.Admin.Web/Dockerfile
+    environment:
+      ApiBaseUrl: http://proxy-api:8080
+      ASPNETCORE_ENVIRONMENT: Development
+    depends_on:
+      - proxy-api
+    expose: ["8080"]
+    restart: on-failure

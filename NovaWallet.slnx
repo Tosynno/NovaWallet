@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Auth.Api/Auth.Api.csproj" />
+    <Project Path="src/NovaWallet.Admin.Web/NovaWallet.Admin.Web.csproj" />
+    <Project Path="src/NovaWallet.Web/NovaWallet.Web.csproj" />
+    <Project Path="src/Proxy.Api/Proxy.Api.csproj" />
+    <Project Path="src/Settlement.Worker/Settlement.Worker.csproj" />
+    <Project Path="src/Wallet.Api/Wallet.Api.csproj" />
+    <Project Path="src/Wallet.Application/Wallet.Application.csproj" />
+    <Project Path="src/Wallet.Domain/Wallet.Domain.csproj" />
+    <Project Path="src/Wallet.Infrastructure/Wallet.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NovaWallet.IntegrationTests/NovaWallet.IntegrationTests.csproj" />
+    <Project Path="tests/NovaWallet.UnitTests/NovaWallet.UnitTests.csproj" />
+  </Folder>
+</Solution>

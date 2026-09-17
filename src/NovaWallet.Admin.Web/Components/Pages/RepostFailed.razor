@@ -1,0 +1,44 @@
+@page "/repost"
+@using NovaWallet.Admin.Web.Services
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ApiClient Api
+
+<PageTitle>Repost Failed Transfers - NovaWallet Admin</PageTitle>
+
+<div class="container mt-4">
+    <h2>Repost Failed Transfers</h2>
+    <hr />
+    @if (ErrorMessage is not null) { <div class="alert alert-danger">@ErrorMessage</div> }
+    @if (SuccessMessage is not null) { <div class="alert alert-success">@SuccessMessage</div> }
+    <div class="mb-3">
+        <label class="form-label">Failed Transfer ID (GUID)</label>
+        <input class="form-control" @bind="TransferIdInput" />
+        <button class="btn btn-danger mt-2" @onclick="RepostTransfer" disabled="@Loading">Repost for Settlement</button>
+    </div>
+</div>
+
+@code {
+    private string TransferIdInput = "";
+    private string? ErrorMessage, SuccessMessage;
+    private bool Loading;
+
+    private async Task RepostTransfer()
+    {
+        if (!Guid.TryParse(TransferIdInput, out var id)) { ErrorMessage = "Invalid GUID"; return; }
+        Loading = true; ErrorMessage = null; SuccessMessage = null;
+        try
+        {
+            var response = await Api.Http.PostAsync($"/api/v1/admin/transfers/{id}/repost", null);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<RepostResponse>();
+                SuccessMessage = $"Transfer reposted. Status: {result?.Status}";
+            }
+            else { ErrorMessage = await response.Content.ReadAsStringAsync(); }
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { Loading = false; }
+    }
+
+    public sealed class RepostResponse { public string Status { get; set; } = ""; public string Message { get; set; } = ""; }
+}

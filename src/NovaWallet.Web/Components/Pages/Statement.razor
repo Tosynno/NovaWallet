@@ -1,0 +1,57 @@
+@page "/statement"
+@using NovaWallet.Web.Services
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ApiClient Api
+
+<PageTitle>Statement - NovaWallet</PageTitle>
+
+<div class="container mt-4">
+    <h2>Transaction Statement</h2>
+    <hr />
+    <div class="mb-3 d-flex gap-2 align-items-end">
+        <div><label class="form-label">Wallet ID</label><input class="form-control" @bind="WalletIdInput" /></div>
+        <div><label class="form-label">Page</label><input type="number" class="form-control" style="width:80px" @bind="Page" /></div>
+        <div><label class="form-label">Page Size</label><input type="number" class="form-control" style="width:80px" @bind="PageSize" /></div>
+        <button class="btn btn-primary" @onclick="LoadStatement">Load</button>
+    </div>
+
+    @if (Items is not null)
+    {
+        <table class="table table-striped">
+            <thead><tr><th>Transfer ID</th><th>Direction</th><th>Amount (kobo)</th><th>Leg</th><th>Date</th></tr></thead>
+            <tbody>
+                @foreach (var item in Items)
+                {
+                    <tr><td>@item.TransferId</td><td>@item.Direction</td><td>@item.AmountKobo</td><td>@item.Leg</td><td>@item.CreatedAt</td></tr>
+                }
+            </tbody>
+        </table>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary btn-sm" disabled="@(Page <= 1)" @onclick='async () => { Page--; await LoadStatement(); }'>Previous</button>
+            <span class="align-self-center">Page @Page</span>
+            <button class="btn btn-outline-secondary btn-sm" disabled="@(Items is null || Items.Count < PageSize)" @onclick='async () => { Page++; await LoadStatement(); }'>Next</button>
+        </div>
+    }
+    @if (ErrorMessage is not null) { <div class="alert alert-danger">@ErrorMessage</div> }
+</div>
+
+@code {
+    private string WalletIdInput = "";
+    private int Page = 1;
+    private int PageSize = 25;
+    private List<StatementItem>? Items;
+    private string? ErrorMessage;
+
+    private async Task LoadStatement()
+    {
+        if (!Guid.TryParse(WalletIdInput, out var id)) { ErrorMessage = "Invalid Wallet ID"; return; }
+        ErrorMessage = null;
+        try
+        {
+            Items = await Api.Http.GetFromJsonAsync<List<StatementItem>>($"/api/v1/wallets/{id}/transactions?page={Page}&pageSize={PageSize}");
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+    }
+
+    public sealed class StatementItem { public Guid? TransferId { get; set; } public string Direction { get; set; } = ""; public long AmountKobo { get; set; } public string Leg { get; set; } = ""; public DateTime CreatedAt { get; set; } }
+}

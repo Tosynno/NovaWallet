@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><RootNamespace>NovaWallet.Application</RootNamespace></PropertyGroup><ItemGroup><ProjectReference Include="..\Wallet.Domain\Wallet.Domain.csproj" /></ItemGroup></Project>

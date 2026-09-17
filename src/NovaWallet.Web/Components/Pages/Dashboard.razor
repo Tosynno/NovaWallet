@@ -1,0 +1,69 @@
+@page "/dashboard"
+@using NovaWallet.Web.Services
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject AuthService Auth
+@inject ApiClient Api
+
+<PageTitle>Dashboard - NovaWallet</PageTitle>
+
+<div class="container mt-4">
+    <h2>Welcome, @Auth.ChannelKey</h2>
+    <hr />
+    <div class="row g-4">
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">Wallet Balance</h5>
+                    @if (Balance is not null)
+                    {
+                        <p class="display-6 text-success">₦@((Balance.BalanceKobo / 100m).ToString("N2"))</p>
+                        <p class="text-muted small">Account: @Balance.AccountNumber</p>
+                    }
+                    else if (LoadingBalance)
+                    {
+                        <p class="text-muted">Loading...</p>
+                    }
+                    else
+                    {
+                        <p class="text-muted">Create a wallet to get started.</p>
+                    }
+                    <button class="btn btn-outline-primary btn-sm" @onclick="LoadBalance">Refresh</button>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">Quick Actions</h5>
+                    <div class="d-grid gap-2">
+                        <a href="/transfer" class="btn btn-primary">New Transfer</a>
+                        <a href="/statement" class="btn btn-outline-primary">View Statement</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private BalanceResponse? Balance;
+    private bool LoadingBalance;
+
+    protected override async Task OnInitializedAsync() => await LoadBalance();
+
+    private async Task LoadBalance()
+    {
+        if (Auth.ChannelKey is null) return;
+        LoadingBalance = true;
+        try
+        {
+            Balance = await Api.Http.GetFromJsonAsync<BalanceResponse>($"/api/v1/wallets/{WalletId}/balance");
+        }
+        catch { }
+        finally { LoadingBalance = false; }
+    }
+
+    private Guid WalletId = Guid.Empty;
+
+    public sealed class BalanceResponse { public string AccountNumber { get; set; } = ""; public string Currency { get; set; } = ""; public long BalanceKobo { get; set; } }
+}

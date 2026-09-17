@@ -1,0 +1,45 @@
+@page "/transactions"
+@using NovaWallet.Admin.Web.Services
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ApiClient Api
+
+<PageTitle>Transaction Monitor - NovaWallet Admin</PageTitle>
+
+<div class="container mt-4">
+    <h2>Transaction Monitor</h2>
+    <hr />
+    <div class="mb-3"><input class="form-control" placeholder="Enter Transfer ID (GUID)" @bind="TransferIdInput" /><button class="btn btn-primary mt-2" @onclick="LookupTransfer">Lookup</button></div>
+    @if (ErrorMessage is not null) { <div class="alert alert-danger">@ErrorMessage</div> }
+    @if (Transfer is not null)
+    {
+        <table class="table table-striped">
+            <tr><th>Transfer ID</th><td>@Transfer.Id</td></tr>
+            <tr><th>Type</th><td>@Transfer.Type</td></tr>
+            <tr><th>Status</th><td>@Transfer.Status</td></tr>
+            <tr><th>Amount (kobo)</th><td>@Transfer.AmountKobo</td></tr>
+            <tr><th>Fee (kobo)</th><td>@Transfer.FeeKobo</td></tr>
+            <tr><th>VAT (kobo)</th><td>@Transfer.VatKobo</td></tr>
+            <tr><th>Total Debit (kobo)</th><td>@Transfer.TotalDebitKobo</td></tr>
+            <tr><th>Reference</th><td>@Transfer.Reference</td></tr>
+            <tr><th>External Ref</th><td>@Transfer.ExternalReference</td></tr>
+            <tr><th>Created</th><td>@Transfer.CreatedAt</td></tr>
+            <tr><th>Updated</th><td>@Transfer.UpdatedAt</td></tr>
+        </table>
+    }
+</div>
+
+@code {
+    private string TransferIdInput = "";
+    private TransferDetail? Transfer;
+    private string? ErrorMessage;
+
+    private async Task LookupTransfer()
+    {
+        if (!Guid.TryParse(TransferIdInput, out var id)) { ErrorMessage = "Invalid GUID"; return; }
+        ErrorMessage = null;
+        try { Transfer = await Api.Http.GetFromJsonAsync<TransferDetail>($"/api/v1/transfers/{id}"); }
+        catch { ErrorMessage = "Transfer not found or access denied."; }
+    }
+
+    public sealed class TransferDetail { public Guid Id { get; set; } public string Type { get; set; } = ""; public string Status { get; set; } = ""; public long AmountKobo { get; set; } public long FeeKobo { get; set; } public long VatKobo { get; set; } public long TotalDebitKobo { get; set; } public string Reference { get; set; } = ""; public string? ExternalReference { get; set; } public DateTime CreatedAt { get; set; } public DateTime UpdatedAt { get; set; } }
+}

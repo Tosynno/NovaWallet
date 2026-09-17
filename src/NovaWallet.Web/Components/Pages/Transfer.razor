@@ -1,0 +1,94 @@
+@page "/transfer"
+@using NovaWallet.Web.Services
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Transfer - NovaWallet</PageTitle>
+
+<div class="container mt-4" style="max-width:600px">
+    <h2>New Transfer</h2>
+    <hr />
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item"><button class="nav-link @(Tab == "internal" ? "active" : "")" @onclick='() => Tab = "internal"'>Internal (N2N)</button></li>
+        <li class="nav-item"><button class="nav-link @(Tab == "outbound" ? "active" : "")" @onclick='() => Tab = "outbound"'>Outbound (Other Bank)</button></li>
+    </ul>
+
+    @if (ErrorMessage is not null) { <div class="alert alert-danger">@ErrorMessage</div> }
+    @if (SuccessMessage is not null) { <div class="alert alert-success">@SuccessMessage</div> }
+
+    @if (Tab == "internal")
+    {
+        <EditForm Model="@InternalModel" OnValidSubmit="@DoInternal" class="card p-4 shadow-sm">
+            <DataAnnotationsValidator />
+            <div class="mb-3"><label class="form-label">Source Wallet ID</label><InputText class="form-control" @bind-Value="InternalModel.SourceWalletId" /></div>
+            <div class="mb-3"><label class="form-label">Destination Account Number</label><InputText class="form-control" @bind-Value="InternalModel.DestinationAccountNumber" /></div>
+            <div class="mb-3"><label class="form-label">Amount (kobo)</label><InputNumber class="form-control" @bind-Value="InternalModel.AmountKobo" /></div>
+            <div class="mb-3"><label class="form-label">Idempotency Key</label><InputText class="form-control" @bind-Value="IdempotencyKey" /></div>
+            <button type="submit" class="btn btn-primary" disabled="@Loading">@(Loading ? "Processing..." : "Send")</button>
+        </EditForm>
+    }
+    else
+    {
+        <EditForm Model="@OutboundModel" OnValidSubmit="@DoOutbound" class="card p-4 shadow-sm">
+            <DataAnnotationsValidator />
+            <div class="mb-3"><label class="form-label">Source Wallet ID</label><InputText class="form-control" @bind-Value="OutboundModel.SourceWalletId" /></div>
+            <div class="mb-3"><label class="form-label">Destination Account Number</label><InputText class="form-control" @bind-Value="OutboundModel.DestinationAccountNumber" /></div>
+            <div class="mb-3"><label class="form-label">Destination Bank Code</label><InputText class="form-control" @bind-Value="OutboundModel.DestinationBankCode" /></div>
+            <div class="mb-3"><label class="form-label">Destination Account Name</label><InputText class="form-control" @bind-Value="OutboundModel.DestinationAccountName" /></div>
+            <div class="mb-3"><label class="form-label">Amount (kobo)</label><InputNumber class="form-control" @bind-Value="OutboundModel.AmountKobo" /></div>
+            <div class="mb-3"><label class="form-label">Idempotency Key</label><InputText class="form-control" @bind-Value="IdempotencyKey" /></div>
+            <button type="submit" class="btn btn-primary" disabled="@Loading">@(Loading ? "Processing..." : "Send")</button>
+        </EditForm>
+    }
+</div>
+
+@code {
+    private string Tab = "internal";
+    private string? ErrorMessage, SuccessMessage;
+    private bool Loading;
+    private string IdempotencyKey = Guid.NewGuid().ToString("N");
+
+    private InternalTransferModel InternalModel = new();
+    private OutboundTransferModel OutboundModel = new();
+
+    private async Task DoInternal()
+    {
+        Loading = true; ErrorMessage = null; SuccessMessage = null;
+        try
+        {
+            var req = new { SourceWalletId = InternalModel.SourceWalletId, DestinationAccountNumber = InternalModel.DestinationAccountNumber, AmountKobo = InternalModel.AmountKobo };
+            var response = await Api.Http.PostAsJsonAsync("/api/v1/transfers/internal", req);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<TransferResponse>();
+                SuccessMessage = $"Transfer successful. Ref: {result?.Reference}";
+            }
+            else { ErrorMessage = await response.Content.ReadAsStringAsync(); }
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { Loading = false; }
+    }
+
+    private async Task DoOutbound()
+    {
+        Loading = true; ErrorMessage = null; SuccessMessage = null;
+        try
+        {
+            var req = new { SourceWalletId = OutboundModel.SourceWalletId, DestinationAccountNumber = OutboundModel.DestinationAccountNumber, DestinationBankCode = OutboundModel.DestinationBankCode, DestinationAccountName = OutboundModel.DestinationAccountName, AmountKobo = OutboundModel.AmountKobo };
+            var response = await Api.Http.PostAsJsonAsync("/api/v1/transfers/outbound", req);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<TransferResponse>();
+                SuccessMessage = $"Outbound transfer submitted. Ref: {result?.Reference}";
+            }
+            else { ErrorMessage = await response.Content.ReadAsStringAsync(); }
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { Loading = false; }
+    }
+
+    public sealed class InternalTransferModel { public string SourceWalletId { get; set; } = ""; public string DestinationAccountNumber { get; set; } = ""; public long AmountKobo { get; set; } }
+    public sealed class OutboundTransferModel { public string SourceWalletId { get; set; } = ""; public string DestinationAccountNumber { get; set; } = ""; public string DestinationBankCode { get; set; } = ""; public string DestinationAccountName { get; set; } = ""; public long AmountKobo { get; set; } }
+    public sealed class TransferResponse { public Guid TransferId { get; set; } public string Reference { get; set; } = ""; }
+}
