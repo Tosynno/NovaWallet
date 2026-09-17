@@ -70,7 +70,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" })).AllowAnonymous();
-app.MapGet("/ready", async (AppDbContext db, CancellationToken ct) => { await db.Database.CanConnectAsync(ct); return Results.Ok(new { status = "ready" }); }).AllowAnonymous();
+app.MapGet("/ready", async (AppDbContext db, CancellationToken ct) => { 
+    var canConnect = await db.Database.CanConnectAsync(ct); 
+    return canConnect ? Results.Ok(new { status = "ready" }) : Results.Json(new { status = "unavailable" }, statusCode: 503); 
+}).AllowAnonymous();
 
 if (app.Environment.IsDevelopment())
 {
@@ -112,7 +115,8 @@ api.MapPost("/wallets/{walletId:guid}/credits", async (Guid walletId, CreditRequ
     var wallet = await service.GetAsync(walletId, customerId, ct);
     if (wallet is null) throw new DomainException("wallet.not_found", "Wallet not found.");
     await service.CreditAsync(walletId, req.AmountKobo, customerId, Correlation(http), ct);
-    return Results.Ok(new { walletId, req.AmountKobo, wallet.BalanceKobo });
+    var updated = await service.GetAsync(walletId, customerId, ct);
+    return Results.Ok(new { walletId, req.AmountKobo, BalanceKobo = updated?.BalanceKobo ?? 0 });
 });
 
 api.MapGet("/wallets/{walletId:guid}/transactions", async (Guid walletId, int? page, int? pageSize, ClaimsPrincipal user, IWalletService service, CancellationToken ct) =>
@@ -200,7 +204,7 @@ app.MapPost("/api/v1/admin/transfers/{transferId:guid}/repost", async (Guid tran
         throw new DomainException("transfer.not_outbound", "Only outbound transfers can be reposted.");
 
     var now = DateTimeOffset.UtcNow;
-    transfer.MarkSettled(now);
+    transfer.ResetForRepost(now);
     var job = await db.SettlementJobs.SingleOrDefaultAsync(x => x.TransferId == transferId, ct);
     if (job is not null)
     {
@@ -218,7 +222,7 @@ app.Use(async (ctx, next) =>
     {
         var status = ex.Code.Contains("forbidden") ? 403
             : ex.Code == "idempotency.required" ? 422
-            : ex.Code == "wallet.not_found" || ex.Code == "transfer.not_found" || ex.Code == "name_enquiry.not_found" ? 404
+            : ex.Code.Contains("not_found") ? 404
             : 400;
         ctx.Response.StatusCode = status;
         await Results.Problem(statusCode: status, title: ex.Message, type: $"https://novawallet/errors/{ex.Code}",

@@ -61,7 +61,7 @@ public sealed class TransferRepository(AppDbContext db) : ITransferRepository
         db.Transfers.SingleOrDefaultAsync(x => x.Id == id, ct);
 
     public Task<Transfer?> GetByIdAndCustomerAsync(Guid id, string customerId, CancellationToken ct) =>
-        db.Transfers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.CustomerId == customerId, ct);
+        db.Transfers.SingleOrDefaultAsync(x => x.Id == id && x.CustomerId == customerId, ct);
 
     public Task<List<Transfer>> GetSettledOutboundForReconciliationAsync(DateOnly dayStart, DateOnly dayEnd, CancellationToken ct)
     {
@@ -110,7 +110,7 @@ public sealed class LedgerEntryRepository(AppDbContext db) : ILedgerEntryReposit
 public sealed class AuditLogRepository(AppDbContext db) : IAuditLogRepository
 {
     public Task AddAsync(AuditLog entry, CancellationToken ct) { db.AuditLogs.Add(entry); return Task.CompletedTask; }
-    public async Task<long> GetMaxIdAsync(CancellationToken ct) => await db.AuditLogs.Select(x => x.Id).MaxAsync(ct);
+    public async Task<long> GetMaxIdAsync(CancellationToken ct) => await db.AuditLogs.Select(x => (long?)x.Id).MaxAsync(ct) ?? 0;
 }
 
 public sealed class OutboxRepository(AppDbContext db) : IOutboxRepository

@@ -59,7 +59,7 @@
         {
             var req = new { SourceWalletId = InternalModel.SourceWalletId, DestinationAccountNumber = InternalModel.DestinationAccountNumber, AmountKobo = InternalModel.AmountKobo };
             var result = await Api.PostAsync<TransferResponse>("/api/v1/transfers/internal", req);
-            if (result is not null) SuccessMessage = $"Transfer successful. Ref: {result.Reference}";
+            if (result is not null) { SuccessMessage = $"Transfer successful. Ref: {result.Reference}"; IdempotencyKey = Guid.NewGuid().ToString("N"); }
             else ErrorMessage = "Transfer failed. Check your inputs.";
         }
         catch (Exception ex) { ErrorMessage = ex.Message; }
@@ -73,7 +73,7 @@
         {
             var req = new { SourceWalletId = OutboundModel.SourceWalletId, DestinationAccountNumber = OutboundModel.DestinationAccountNumber, DestinationBankCode = OutboundModel.DestinationBankCode, DestinationAccountName = OutboundModel.DestinationAccountName, AmountKobo = OutboundModel.AmountKobo };
             var result = await Api.PostAsync<TransferResponse>("/api/v1/transfers/outbound", req);
-            if (result is not null) SuccessMessage = $"Outbound submitted. Ref: {result.Reference}";
+            if (result is not null) { SuccessMessage = $"Outbound submitted. Ref: {result.Reference}"; IdempotencyKey = Guid.NewGuid().ToString("N"); }
             else ErrorMessage = "Transfer failed. Check your inputs.";
         }
         catch (Exception ex) { ErrorMessage = ex.Message; }

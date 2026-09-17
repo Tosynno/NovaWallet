@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using NovaWallet.Application;
 using NovaWallet.Application.Repositories;
 using NovaWallet.Domain;
@@ -12,7 +13,8 @@ public sealed class WalletService(
     IExternalAccountRepository externalAccounts,
     ILedgerEntryRepository ledgerEntries,
     IAuditLogRepository auditLogs,
-    IClock clock) : IWalletService
+    IClock clock,
+    AppDbContext db) : IWalletService
 {
     public async Task<WalletCreatedResult> CreateAsync(string customerId, CancellationToken ct)
     {
@@ -71,6 +73,8 @@ public sealed class WalletService(
     {
         var wallet = await wallets.GetByAccountNumberAsync(accountNumber, ct);
         if (wallet is null || wallet.AccountType != AccountType.Customer) return null;
-        return new NameEnquiryResult(wallet.AccountNumber, wallet.CustomerId, "011", "First Bank of Nigeria");
+        var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.CustomerId == wallet.CustomerId, ct);
+        var accountName = user is not null ? $"{user.FirstName} {user.LastName}" : wallet.CustomerId;
+        return new NameEnquiryResult(wallet.AccountNumber, accountName, "011", "First Bank of Nigeria");
     }
 }

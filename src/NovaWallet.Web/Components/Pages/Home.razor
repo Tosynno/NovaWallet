@@ -1,5 +1,7 @@
 ﻿@page "/"
+@using NovaWallet.Web.Services
 @inject NavigationManager Nav
+@inject AuthService Auth
 
 <PageTitle>NovaWallet</PageTitle>
 
@@ -12,6 +14,6 @@
 @code {
     protected override void OnInitialized()
     {
-        Nav.NavigateTo("/login", forceLoad: true);
+        Nav.NavigateTo(Auth.IsAuthenticated ? "/dashboard" : "/login");
     }
 }

@@ -62,7 +62,7 @@ builder.Services.AddCors(o =>
                     || uri.Host.EndsWith(".novawallet.com");
             return false;
         })
-        .WithMethods("GET", "POST")
+        .WithMethods("GET", "POST", "PUT", "OPTIONS")
         .WithHeaders("Authorization", "Content-Type", "Idempotency-Key", "X-Correlation-Id", "X-Request-Id")
         .AllowCredentials()
         .SetPreflightMaxAge(TimeSpan.FromMinutes(10)));
@@ -139,6 +139,16 @@ app.UseAuthorization();
 app.Use(async (ctx, next) =>
 {
     var path = ctx.Request.Path.Value ?? "";
+    if (path == "/api/v1/auth/token" || path == "/health")
+    {
+        await next();
+        return;
+    }
+    if (ctx.User.Identity?.IsAuthenticated != true)
+    {
+        ctx.Response.StatusCode = 401;
+        return;
+    }
     if (path.Contains("/admin") && !ctx.User.IsInRole("admin") && !ctx.User.IsInRole("product-owner"))
     {
         ctx.Response.StatusCode = 403;
@@ -148,7 +158,9 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
-app.MapReverseProxy().RequireAuthorization();
+app.MapReverseProxy();
+
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" })).AllowAnonymous();
 
 app.Run();
 

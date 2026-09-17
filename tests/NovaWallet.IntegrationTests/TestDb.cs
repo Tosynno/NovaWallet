@@ -52,7 +52,7 @@ public sealed class TestDb : IAsyncDisposable
 
     public WalletService CreateWalletService(IClock? clock = null) =>
         new(new UnitOfWork(Db), new WalletRepository(Db), new ExternalAccountRepository(Db),
-            new LedgerEntryRepository(Db), new AuditLogRepository(Db), clock ?? new SystemClock());
+            new LedgerEntryRepository(Db), new AuditLogRepository(Db), clock ?? new SystemClock(), Db);
 
     public TransferService CreateTransferService(IClock? clock = null, FeePolicy? fees = null) =>
         new(new UnitOfWork(Db), new WalletRepository(Db), new TransferRepository(Db),
@@ -79,7 +79,7 @@ public sealed class TestDb : IAsyncDisposable
 
     public static WalletService CreateWalletService(AppDbContext db, IClock? clock = null) =>
         new(new UnitOfWork(db), new WalletRepository(db), new ExternalAccountRepository(db),
-            new LedgerEntryRepository(db), new AuditLogRepository(db), clock ?? new SystemClock());
+            new LedgerEntryRepository(db), new AuditLogRepository(db), clock ?? new SystemClock(), db);
 
     public static TransferService CreateTransferService(AppDbContext db, IClock? clock = null, FeePolicy? fees = null) =>
         new(new UnitOfWork(db), new WalletRepository(db), new TransferRepository(db),

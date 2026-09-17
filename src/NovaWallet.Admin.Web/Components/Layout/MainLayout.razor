@@ -1,6 +1,8 @@
 ﻿@inherits LayoutComponentBase
 @using NovaWallet.Admin.Web.Services
 @inject AuthService Auth
+@inject CustomAuthStateProvider AuthStateProvider
+@inject NavigationManager Nav
 
 <div class="page">
     <NavMenu />
@@ -11,7 +13,7 @@
             {
                 <div class="d-flex align-items-center gap-3">
                     <span class="text-muted small">@Auth.DisplayName</span>
-                    <a href="/login" class="btn btn-outline-primary btn-sm" @onclick="@(() => { Auth.Logout(); })">Logout</a>
+                    <button class="btn btn-outline-primary btn-sm" @onclick="DoLogout">Logout</button>
                 </div>
             }
             else
@@ -30,3 +32,12 @@
     <a href="" class="reload">Reload</a>
     <a class="dismiss">X</a>
 </div>
+
+@code {
+    private void DoLogout()
+    {
+        Auth.Logout();
+        AuthStateProvider.NotifyChanged();
+        Nav.NavigateTo("/login", forceLoad: true);
+    }
+}

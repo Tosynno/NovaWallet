@@ -61,15 +61,24 @@ public sealed class ApiClient
 {
     public HttpClient Http { get; }
     private readonly EncryptionService _crypto;
+    private readonly AuthService _auth;
 
-    public ApiClient(HttpClient http, EncryptionService crypto)
+    public ApiClient(HttpClient http, EncryptionService crypto, AuthService auth)
     {
         Http = http;
         _crypto = crypto;
+        _auth = auth;
+    }
+
+    private void EnsureAuthHeader()
+    {
+        if (!string.IsNullOrWhiteSpace(_auth.Token))
+            Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _auth.Token);
     }
 
     public async Task<T?> GetAsync<T>(string path)
     {
+        EnsureAuthHeader();
         var response = await Http.GetAsync(path);
         if (!response.IsSuccessStatusCode) return default;
         var raw = await response.Content.ReadAsStringAsync();
@@ -82,6 +91,7 @@ public sealed class ApiClient
 
     public async Task<T?> PostAsync<T>(string path, object body)
     {
+        EnsureAuthHeader();
         var payload = System.Text.Json.JsonSerializer.Serialize(body);
         var encrypted = _crypto.Encrypt(payload);
         var wrapper = System.Text.Json.JsonSerializer.Serialize(new { Data = encrypted });
@@ -98,6 +108,7 @@ public sealed class ApiClient
 
     public async Task<bool> PostNoResponseAsync(string path, object? body = null)
     {
+        EnsureAuthHeader();
         if (body is null)
         {
             var resp = await Http.PostAsync(path, null);
@@ -113,6 +124,7 @@ public sealed class ApiClient
 
     public async Task<bool> PutNoResponseAsync(string path, object? body = null)
     {
+        EnsureAuthHeader();
         if (body is null)
         {
             var resp = await Http.PutAsync(path, null);

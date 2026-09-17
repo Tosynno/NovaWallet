@@ -40,6 +40,7 @@
 
                 <EditForm Model="@LoginModel" FormName="admin-login" OnValidSubmit="@DoLogin">
                     <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger small mb-2" />
                     <div class="login-field-group">
                         <label class="form-label">Username</label>
                         <span class="oi oi-person login-field-icon"></span>
@@ -58,7 +59,7 @@
                             <input type="checkbox" @bind="RememberMe" />
                             <span>Remember me</span>
                         </label>
-                        <a href="#" class="login-forgot">Forgot password?</a>
+                        @* <a href="#" class="login-forgot">Forgot password?</a> *@
                     </div>
                     <button type="submit" class="btn btn-primary login-btn" disabled="@Loading">
                         @if (Loading)
@@ -89,6 +90,16 @@
     private bool Loading;
     private bool ShowPassword;
     private bool RememberMe;
+    private string? ReturnUrl;
+
+    protected override void OnInitialized()
+    {
+        var uri = Nav.ToBaseRelativePath(Nav.Uri);
+        if (uri.StartsWith("login?returnUrl="))
+        {
+            ReturnUrl = Uri.UnescapeDataString(uri["login?returnUrl=".Length..]);
+        }
+    }
 
     private async Task DoLogin()
     {
@@ -96,12 +107,11 @@
         ErrorMessage = null;
         try
         {
-            await Task.Delay(300);
             if (Auth.Validate(LoginModel.Username, LoginModel.Password))
             {
                 Auth.SetAuthenticated(LoginModel.Username);
                 AuthStateProvider.NotifyChanged();
-                Nav.NavigateTo("/dashboard");
+                Nav.NavigateTo(string.IsNullOrWhiteSpace(ReturnUrl) ? "/dashboard" : ReturnUrl);
             }
             else
             {

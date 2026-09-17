@@ -86,7 +86,7 @@ public sealed class SettlementJob
     {
         Status = deadLetter ? SettlementStatus.DeadLetter : SettlementStatus.Failed;
         LastError = error;
-        NextAttemptAt = now + backoff;
+        NextAttemptAt = deadLetter ? DateTimeOffset.MaxValue : now + backoff;
         LeaseUntil = null;
     }
 

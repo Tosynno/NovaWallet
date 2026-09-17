@@ -7,6 +7,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddAuthorization();
 builder.Services.AddAuthorizationCore();
+builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<EncryptionService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CustomAuthStateProvider>();
