@@ -163,10 +163,11 @@ app.Use(async (ctx, next) =>
 
 app.Use(async (ctx, next) =>
 {
-    var isApiRoute = ctx.Request.Path.StartsWithSegments("/api");
+    var isApiRoute = ctx.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase);
     var encryption = ctx.RequestServices.GetRequiredService<EncryptionService>();
+    var jsonOpts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
-    if (isApiRoute && ctx.Request.ContentType?.Contains("application/json") == true && ctx.Request.ContentLength > 0)
+    if (isApiRoute && ctx.Request.ContentType?.Contains("application/json", StringComparison.OrdinalIgnoreCase) == true && ctx.Request.ContentLength > 0)
     {
         ctx.Request.EnableBuffering();
         using var reader = new StreamReader(ctx.Request.Body, leaveOpen: true);
@@ -175,7 +176,7 @@ app.Use(async (ctx, next) =>
 
         try
         {
-            var wrapper = JsonSerializer.Deserialize<EncryptionService.EncryptedWrapper>(body);
+            var wrapper = JsonSerializer.Deserialize<EncryptionService.EncryptedWrapper>(body, jsonOpts);
             if (wrapper?.Data is not null)
             {
                 var decrypted = encryption.Decrypt(wrapper.Data);
@@ -200,7 +201,7 @@ app.Use(async (ctx, next) =>
         if (!string.IsNullOrEmpty(responseContent))
         {
             var encrypted = encryption.Encrypt(responseContent);
-            var wrapped = JsonSerializer.Serialize(new { Data = encrypted });
+            var wrapped = JsonSerializer.Serialize(new { Data = encrypted }, jsonOpts);
             var bytes = Encoding.UTF8.GetBytes(wrapped);
             ctx.Response.Body = originalStream;
             ctx.Response.ContentLength = bytes.Length;

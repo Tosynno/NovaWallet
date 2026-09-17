@@ -73,7 +73,7 @@ public sealed class SettlementBackgroundService(IServiceScopeFactory scopeFactor
                 await db.SaveChangesAsync(ct);
 
                 var transfer = await db.Transfers.SingleAsync(x => x.Id == job.TransferId, ct);
-                if (transfer.Status is TransferStatus.Failed or TransferStatus.Settled)
+                if (transfer.Status is TransferStatus.Failed or TransferStatus.Settled or TransferStatus.Unknown)
                 {
                     job.Succeed("NOOP-ALREADY-RESOLVED", now);
                     await db.SaveChangesAsync(ct);

@@ -92,6 +92,7 @@ public sealed class AdminDatabaseService(AppDbContext db)
         if (status == "Active") channel.Activate(now);
         else if (status == "Suspended") channel.Suspend(now);
         else if (status == "Revoked") channel.Revoke(now);
+        else return false;
         await db.SaveChangesAsync();
         return true;
     }

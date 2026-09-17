@@ -282,4 +282,28 @@ public sealed class TransferService(
     private static string NewReference() => "NV" + Guid.NewGuid().ToString("N").ToUpperInvariant()[..12];
     private static TransferResult ToResult(Transfer t) =>
         new(t.Id, t.Type, t.Status, t.AmountKobo, t.FeeKobo, t.VatKobo, t.TotalDebitKobo, t.Reference, t.ExternalReference);
+
+    public async Task<TransferDetailResult?> GetTransferDetailAsync(Guid transferId, string customerId, CancellationToken ct)
+    {
+        var transfer = await transfers.GetByIdAndCustomerAsync(transferId, customerId, ct);
+        if (transfer is null) return null;
+        return new TransferDetailResult(transfer.Id, transfer.Type, transfer.Status, transfer.AmountKobo, transfer.FeeKobo, transfer.VatKobo, transfer.TotalDebitKobo, transfer.Reference, transfer.ExternalReference, transfer.CreatedAt, transfer.UpdatedAt);
+    }
+
+    public async Task<RepostResult> RepostAsync(Guid transferId, CancellationToken ct)
+    {
+        var transfer = await transfers.GetByIdAsync(transferId, ct)
+            ?? throw new DomainException("transfer.not_found", "Transfer not found.");
+        if (transfer.Status != TransferStatus.Failed)
+            throw new DomainException("transfer.not_failed", "Only failed transfers can be reposted.");
+        if (transfer.Type != TransferType.Outbound)
+            throw new DomainException("transfer.not_outbound", "Only outbound transfers can be reposted.");
+
+        var now = clock.UtcNow;
+        transfer.ResetForRepost(now);
+        var job = await settlementJobs.GetByTransferIdAsync(transferId, ct);
+        if (job is not null) job.Repost(now);
+        await uow.SaveChangesAsync(ct);
+        return new RepostResult(transfer.Id, transfer.Status, "Transfer reposted for settlement.");
+    }
 }

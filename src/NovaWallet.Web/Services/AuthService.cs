@@ -55,7 +55,7 @@ public sealed class ChannelTokenService
         var result = JsonSerializer.Deserialize<TokenResponse>(json, JsonOpts);
         if (result is null || string.IsNullOrWhiteSpace(result.Token)) return;
         Token = result.Token;
-        ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(result.ExpiresInSeconds - 30, 60));
+        ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(result.ExpiresInSeconds - 30, 1));
     }
 
     public record TokenResponse(string Token, int ExpiresInSeconds);
@@ -86,7 +86,7 @@ public sealed class AuthService
     private void SetUserToken(string token, int expiresInSeconds, string? customerId, string? walletId, string? accountNumber)
     {
         Token = token;
-        TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(Math.Max(expiresInSeconds - 30, 60));
+        TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(Math.Max(expiresInSeconds - 30, 1));
         CustomerId = customerId;
         WalletId = walletId;
         AccountNumber = accountNumber;
@@ -173,6 +173,7 @@ public sealed class AuthService
 public sealed class ApiClient
 {
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+    private static readonly JsonSerializerOptions CamelOpts = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     public HttpClient Http { get; }
     private readonly EncryptionService _crypto;
     private readonly ChannelTokenService _channel;
@@ -188,9 +189,8 @@ public sealed class ApiClient
 
     private async Task EnsureAuthHeaderAsync()
     {
-        var channelToken = await _channel.EnsureTokenAsync();
-        var userToken = _auth.IsAuthenticated ? _auth.Token : null;
-        var token = userToken ?? channelToken;
+        await _channel.EnsureTokenAsync();
+        var token = _auth.Token;
         if (!string.IsNullOrWhiteSpace(token))
             Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
     }
@@ -203,13 +203,15 @@ public sealed class ApiClient
         return await DecryptResponseAsync<T>(response);
     }
 
-    public async Task<T?> PostAsync<T>(string path, object body)
+    public async Task<T?> PostAsync<T>(string path, object body, string? idempotencyKey = null)
     {
         await EnsureAuthHeaderAsync();
-        var payload = JsonSerializer.Serialize(body);
+        var payload = JsonSerializer.Serialize(body, CamelOpts);
         var encrypted = _crypto.Encrypt(payload);
-        var wrapper = JsonSerializer.Serialize(new { Data = encrypted });
+        var wrapper = JsonSerializer.Serialize(new { Data = encrypted }, CamelOpts);
         var content = new StringContent(wrapper, Encoding.UTF8, "application/json");
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+            content.Headers.Add("Idempotency-Key", idempotencyKey);
         var response = await Http.PostAsync(path, content);
         if (!response.IsSuccessStatusCode) return default;
         return await DecryptResponseAsync<T>(response);

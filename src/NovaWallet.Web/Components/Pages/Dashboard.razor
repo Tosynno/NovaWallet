@@ -111,6 +111,15 @@
     private bool LoadingBalance;
     private string? LoadError;
 
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(Auth.WalletId))
+        {
+            WalletIdInput = Auth.WalletId;
+            await LoadBalance();
+        }
+    }
+
     private async Task LoadBalance()
     {
         if (!Guid.TryParse(WalletIdInput, out var id))

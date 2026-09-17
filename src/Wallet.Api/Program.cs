@@ -9,6 +9,7 @@ using NovaWallet.Application.Repositories;
 using NovaWallet.Domain;
 using NovaWallet.Infrastructure;
 using NovaWallet.Infrastructure.Repositories;
+using NovaWallet.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
@@ -36,6 +37,7 @@ builder.Services.AddScoped<IDailyOutboundCounterRepository, DailyOutboundCounter
 builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<ITransferService, TransferService>();
 builder.Services.AddScoped<IReconciliationService, ReconciliationService>();
+builder.Services.AddScoped<IExternalAccountService, ExternalAccountService>();
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<IPaymentRail, MockNipPaymentRail>();
 builder.Services.AddProblemDetails();
@@ -114,9 +116,8 @@ api.MapPost("/wallets/{walletId:guid}/credits", async (Guid walletId, CreditRequ
     var customerId = user.FindFirst("sub")?.Value ?? throw new DomainException("auth.subject_missing", "Authenticated subject is missing.");
     var wallet = await service.GetAsync(walletId, customerId, ct);
     if (wallet is null) throw new DomainException("wallet.not_found", "Wallet not found.");
-    await service.CreditAsync(walletId, req.AmountKobo, customerId, Correlation(http), ct);
-    var updated = await service.GetAsync(walletId, customerId, ct);
-    return Results.Ok(new { walletId, req.AmountKobo, BalanceKobo = updated?.BalanceKobo ?? 0 });
+    var updated = await service.CreditAsync(walletId, req.AmountKobo, customerId, Correlation(http), ct);
+    return Results.Ok(new { walletId, req.AmountKobo, BalanceKobo = updated.BalanceKobo });
 });
 
 api.MapGet("/wallets/{walletId:guid}/transactions", async (Guid walletId, int? page, int? pageSize, ClaimsPrincipal user, IWalletService service, CancellationToken ct) =>
@@ -163,12 +164,12 @@ app.MapGet("/api/v1/transfers/{transferId:guid}/status", async (Guid transferId,
     return Results.Ok(result);
 }).RequireAuthorization();
 
-app.MapGet("/api/v1/transfers/{transferId:guid}", async (Guid transferId, ClaimsPrincipal user, AppDbContext db, CancellationToken ct) =>
+app.MapGet("/api/v1/transfers/{transferId:guid}", async (Guid transferId, ClaimsPrincipal user, ITransferService service, CancellationToken ct) =>
 {
     var customerId = user.FindFirst("sub")?.Value ?? throw new DomainException("auth.subject_missing", "Authenticated subject is missing.");
-    var transfer = await db.Transfers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == transferId && x.CustomerId == customerId, ct)
+    var transfer = await service.GetTransferDetailAsync(transferId, customerId, ct)
         ?? throw new DomainException("transfer.not_found", "Transfer not found.");
-    return Results.Ok(new { transfer.Id, transfer.Type, transfer.Status, transfer.AmountKobo, transfer.FeeKobo, transfer.VatKobo, transfer.TotalDebitKobo, transfer.Reference, transfer.ExternalReference, transfer.CreatedAt, transfer.UpdatedAt });
+    return Results.Ok(transfer);
 }).RequireAuthorization();
 
 app.MapGet("/api/v1/admin/reconciliation", async (int? page, int? pageSize, IReconciliationService service, CancellationToken ct) =>
@@ -190,28 +191,14 @@ app.MapPost("/api/v1/admin/reconciliation/run", async (HttpContext http, IReconc
 })
 .RequireAuthorization("AdminOrProductOwner");
 
-app.MapGet("/api/v1/admin/external-accounts", async (IExternalAccountRepository repo, CancellationToken ct) =>
-    Results.Ok(await repo.GetAllAsync(ct)))
+app.MapGet("/api/v1/admin/external-accounts", async (IExternalAccountService service, CancellationToken ct) =>
+    Results.Ok(await service.GetAllAsync(ct)))
 .RequireAuthorization("AdminOrProductOwner");
 
-app.MapPost("/api/v1/admin/transfers/{transferId:guid}/repost", async (Guid transferId, AppDbContext db, CancellationToken ct) =>
+app.MapPost("/api/v1/admin/transfers/{transferId:guid}/repost", async (Guid transferId, ITransferService service, CancellationToken ct) =>
 {
-    var transfer = await db.Transfers.SingleOrDefaultAsync(x => x.Id == transferId, ct)
-        ?? throw new DomainException("transfer.not_found", "Transfer not found.");
-    if (transfer.Status != TransferStatus.Failed)
-        throw new DomainException("transfer.not_failed", "Only failed transfers can be reposted.");
-    if (transfer.Type != TransferType.Outbound)
-        throw new DomainException("transfer.not_outbound", "Only outbound transfers can be reposted.");
-
-    var now = DateTimeOffset.UtcNow;
-    transfer.ResetForRepost(now);
-    var job = await db.SettlementJobs.SingleOrDefaultAsync(x => x.TransferId == transferId, ct);
-    if (job is not null)
-    {
-        job.Repost(now);
-    }
-    await db.SaveChangesAsync(ct);
-    return Results.Ok(new { transfer.Id, transfer.Status, message = "Transfer reposted for settlement." });
+    var result = await service.RepostAsync(transferId, ct);
+    return Results.Ok(new { result.TransferId, result.Status, message = result.Message });
 })
 .RequireAuthorization("AdminOrProductOwner");
 

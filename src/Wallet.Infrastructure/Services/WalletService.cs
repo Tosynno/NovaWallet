@@ -39,7 +39,7 @@ public sealed class WalletService(
         return new(wallet.AccountNumber, wallet.Currency, wallet.BalanceKobo);
     }
 
-    public async Task CreditAsync(Guid walletId, long amountKobo, string actor, string correlationId, CancellationToken ct)
+    public async Task<BalanceResult> CreditAsync(Guid walletId, long amountKobo, string actor, string correlationId, CancellationToken ct)
     {
         await using var tx = await uow.BeginTransactionAsync(ct);
         try
@@ -62,6 +62,7 @@ public sealed class WalletService(
                 correlationId, clock.UtcNow), ct);
             await uow.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
+            return new BalanceResult(wallet.AccountNumber, wallet.Currency, wallet.BalanceKobo);
         }
         catch { await tx.RollbackAsync(ct); throw; }
     }

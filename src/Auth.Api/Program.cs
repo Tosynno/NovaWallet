@@ -1,13 +1,11 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using NovaWallet.Application;
 using NovaWallet.Domain;
 using NovaWallet.Infrastructure;
-using NovaWallet.Application;
+using NovaWallet.Infrastructure.Services;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
@@ -31,6 +29,11 @@ builder.Services.AddAuthorization(o =>
     o.AddPolicy("AdminOrProductOwner", p => p.RequireRole(Roles.Admin, Roles.ProductOwner));
 });
 
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IChannelService, ChannelService>();
+builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IKycService, KycService>();
+
 var app = builder.Build();
 
 app.UseExceptionHandler();
@@ -46,255 +49,124 @@ app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" })).AllowAnonymous();
 
-app.MapPost("/api/v1/auth/token", async (TokenRequest req, AppDbContext db, IConfiguration cfg, CancellationToken ct) =>
+app.MapPost("/api/v1/auth/token", async (TokenRequest req, IAuthService service, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(req.AppKey) || string.IsNullOrWhiteSpace(req.AppSecret))
         return Results.BadRequest(new { code = "auth.missing_credentials", message = "AppKey and AppSecret are required." });
-
-    var channel = await db.Channels.SingleOrDefaultAsync(x => x.AppKey == req.AppKey, ct);
-    if (channel is null || channel.Status != ChannelStatus.Active)
-        return Results.Unauthorized();
-
-    var secretHash = HashSecret(req.AppSecret);
-    if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(channel.AppSecretHash), Encoding.UTF8.GetBytes(secretHash)))
-        return Results.Unauthorized();
-
-    var expiryMinutes = cfg.GetValue<int>("Jwt:ExpiryMinutes", 5);
-    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(cfg["Jwt:Key"]!));
-    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-    var claims = new List<Claim>
-    {
-        new("sub", channel.ChannelKey),
-        new("channel", channel.ChannelName),
-        new("channel_key", channel.ChannelKey)
-    };
-    var token = new JwtSecurityToken(
-        issuer: cfg["Jwt:Issuer"], audience: cfg["Jwt:Audience"],
-        claims: claims, expires: DateTime.UtcNow.AddMinutes(expiryMinutes), signingCredentials: creds);
-    return Results.Ok(new { token = new JwtSecurityTokenHandler().WriteToken(token), expiresInSeconds = expiryMinutes * 60 });
+    var result = await service.IssueChannelTokenAsync(req.AppKey, req.AppSecret, ct);
+    return result is null ? Results.Unauthorized() : Results.Ok(new { token = result.Token, expiresInSeconds = result.ExpiresInSeconds });
 }).AllowAnonymous();
 
-app.MapPost("/api/v1/auth/login", async (LoginRequest req, AppDbContext db, IConfiguration cfg, CancellationToken ct) =>
+app.MapPost("/api/v1/auth/login", async (LoginRequest req, IAuthService service, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
         return Results.BadRequest(new { code = "auth.missing_credentials", message = "Email and Password are required." });
-
-    var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Email == req.Email, ct);
-    if (user is null || string.IsNullOrEmpty(user.PasswordHash))
-        return Results.Unauthorized();
-
-    var passwordHash = HashSecret(req.Password);
-    if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(user.PasswordHash), Encoding.UTF8.GetBytes(passwordHash)))
-        return Results.Unauthorized();
-
-    var expiryMinutes = cfg.GetValue<int>("Jwt:ExpiryMinutes", 60);
-    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(cfg["Jwt:Key"]!));
-    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-    var claims = new List<Claim>
-    {
-        new("sub", user.CustomerId),
-        new("email", user.Email),
-        new("role", user.Role.ToString().ToLowerInvariant())
-    };
-    var token = new JwtSecurityToken(
-        issuer: cfg["Jwt:Issuer"], audience: cfg["Jwt:Audience"],
-        claims: claims, expires: DateTime.UtcNow.AddMinutes(expiryMinutes), signingCredentials: creds);
-    return Results.Ok(new { token = new JwtSecurityTokenHandler().WriteToken(token), expiresInSeconds = expiryMinutes * 60, customerId = user.CustomerId });
+    var result = await service.LoginAsync(req.Email, req.Password, ct);
+    return result is null ? Results.Unauthorized() : Results.Ok(new { token = result.Token, expiresInSeconds = result.ExpiresInSeconds, customerId = result.CustomerId });
 }).AllowAnonymous();
 
-app.MapPost("/api/v1/auth/register", async (RegisterRequest req, AppDbContext db, IConfiguration cfg, CancellationToken ct) =>
+app.MapPost("/api/v1/auth/register", async (RegisterRequest req, IAuthService service, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
         return Results.BadRequest(new { code = "auth.missing_credentials", message = "Email and Password are required." });
+    var result = await service.RegisterAsync(req.Email, req.Password, req.FirstName ?? "", req.LastName ?? "", req.PhoneNumber, ct);
+    if (!result.Success)
+        return result.Error == "Email already registered."
+            ? Results.Conflict(new { code = "user.duplicate", message = result.Error })
+            : Results.Problem(statusCode: 500, title: result.Error);
+    return Results.Ok(new { token = result.Token, expiresInSeconds = result.ExpiresInSeconds, customerId = result.CustomerId, walletId = result.WalletId, accountNumber = result.AccountNumber });
+}).AllowAnonymous();
 
-    if (await db.Users.AnyAsync(x => x.Email == req.Email, ct))
-        return Results.Conflict(new { code = "user.duplicate", message = "Email already registered." });
-
-    var customerId = Guid.NewGuid().ToString("N");
-    var passwordHash = HashSecret(req.Password);
-    var now = DateTimeOffset.UtcNow;
-    var expiryMinutes = cfg.GetValue<int>("Jwt:ExpiryMinutes", 60);
-
-    Guid walletId = Guid.Empty;
-    string accountNumber = "";
-
-    for (var attempt = 0; attempt < 5; attempt++)
+app.MapPost("/api/v1/channels", async (CreateChannelRequest req, IChannelService service, CancellationToken ct) =>
+{
+    try
     {
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-        try
-        {
-            var user = User.Create(customerId, req.Email, req.FirstName ?? "", req.LastName ?? "", UserRole.Customer, now, passwordHash);
-            if (!string.IsNullOrWhiteSpace(req.PhoneNumber)) user.SetPhoneNumber(req.PhoneNumber, now);
-            db.Users.Add(user);
-
-            accountNumber = AccountNumberGenerator.Generate();
-            var wallet = Wallet.CreateCustomer(customerId, accountNumber, now);
-            db.Wallets.Add(wallet);
-
-            await db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
-
-            walletId = wallet.Id;
-            break;
-        }
-        catch (DbUpdateException) when (attempt < 4)
-        {
-            await tx.RollbackAsync(ct);
-            db.ChangeTracker.Clear();
-        }
-        catch
-        {
-            await tx.RollbackAsync(ct);
-            throw;
-        }
+        var result = await service.CreateAsync(req.ChannelKey, req.ChannelName, ct);
+        return Results.Created($"/api/v1/channels/{result.ChannelKey}", new { result.ChannelKey, result.ChannelName, result.Status, AppKey = result.AppKey, AppSecret = result.AppSecret, message = "Save the AppSecret securely. It will not be shown again." });
     }
-
-    if (walletId == Guid.Empty)
-        return Results.Problem(statusCode: 500, title: "Could not allocate a unique account number.");
-
-    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(cfg["Jwt:Key"]!));
-    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-    var claims = new List<Claim>
+    catch (DomainException ex) when (ex.Code == "channel.duplicate")
     {
-        new("sub", customerId),
-        new("email", req.Email),
-        new("role", "customer")
-    };
-    var token = new JwtSecurityToken(
-        issuer: cfg["Jwt:Issuer"], audience: cfg["Jwt:Audience"],
-        claims: claims, expires: DateTime.UtcNow.AddMinutes(expiryMinutes), signingCredentials: creds);
-    return Results.Ok(new { token = new JwtSecurityTokenHandler().WriteToken(token), expiresInSeconds = expiryMinutes * 60, customerId, walletId, accountNumber });
-}).AllowAnonymous();
-
-app.MapPost("/api/v1/channels", async (CreateChannelRequest req, AppDbContext db, CancellationToken ct) =>
-{
-    if (string.IsNullOrWhiteSpace(req.ChannelKey) || string.IsNullOrWhiteSpace(req.ChannelName))
-        return Results.BadRequest(new { code = "channel.invalid", message = "ChannelKey and ChannelName are required." });
-
-    if (await db.Channels.AnyAsync(x => x.ChannelKey == req.ChannelKey, ct))
-        return Results.Conflict(new { code = "channel.duplicate", message = "ChannelKey already exists." });
-
-    var appKey = GenerateAppKey();
-    var appSecret = GenerateAppSecret();
-    var channel = Channel.Create(req.ChannelKey, req.ChannelName, appKey, HashSecret(appSecret), DateTimeOffset.UtcNow);
-    db.Channels.Add(channel);
-    await db.SaveChangesAsync(ct);
-
-    return Results.Created($"/api/v1/channels/{channel.ChannelKey}", new { channel.ChannelKey, channel.ChannelName, channel.Status, AppKey = appKey, AppSecret = appSecret, message = "Save the AppSecret securely. It will not be shown again." });
+        return Results.Conflict(new { code = ex.Code, message = ex.Message });
+    }
+    catch (DomainException ex)
+    {
+        return Results.BadRequest(new { code = ex.Code, message = ex.Message });
+    }
 }).RequireAuthorization("AdminOrProductOwner");
 
-app.MapGet("/api/v1/channels", async (AppDbContext db, CancellationToken ct) =>
+app.MapGet("/api/v1/channels", async (IChannelService service, CancellationToken ct) =>
+    Results.Ok(await service.ListAsync(ct))).RequireAuthorization("AdminOrProductOwner");
+
+app.MapPut("/api/v1/channels/{channelKey}/keys", async (string channelKey, IChannelService service, CancellationToken ct) =>
 {
-    var channels = await db.Channels.AsNoTracking().Select(x => new { x.Id, x.ChannelKey, x.ChannelName, x.AppKey, x.Status, x.CreatedAt, x.UpdatedAt }).ToListAsync(ct);
-    return Results.Ok(channels);
+    var result = await service.RotateKeysAsync(channelKey, ct);
+    return result is null ? Results.NotFound(new { code = "channel.not_found", message = "Channel not found." }) : Results.Ok(new { result.ChannelKey, AppKey = result.AppKey, AppSecret = result.AppSecret, message = "Save the AppSecret securely. It will not be shown again." });
 }).RequireAuthorization("AdminOrProductOwner");
 
-app.MapPut("/api/v1/channels/{channelKey}/keys", async (string channelKey, AppDbContext db, CancellationToken ct) =>
+app.MapPut("/api/v1/channels/{channelKey}/status", async (string channelKey, UpdateChannelStatusRequest req, IChannelService service, CancellationToken ct) =>
 {
-    var channel = await db.Channels.SingleOrDefaultAsync(x => x.ChannelKey == channelKey, ct);
-    if (channel is null) return Results.NotFound(new { code = "channel.not_found", message = "Channel not found." });
-
-    var newAppKey = GenerateAppKey();
-    var newAppSecret = GenerateAppSecret();
-    channel.RotateKeys(newAppKey, HashSecret(newAppSecret), DateTimeOffset.UtcNow);
-    await db.SaveChangesAsync(ct);
-
-    return Results.Ok(new { channel.ChannelKey, AppKey = newAppKey, AppSecret = newAppSecret, message = "Save the AppSecret securely. It will not be shown again." });
+    try
+    {
+        var result = await service.UpdateStatusAsync(channelKey, req.Status, ct);
+        return result is null ? Results.NotFound(new { code = "channel.not_found", message = "Channel not found." }) : Results.Ok(new { result.ChannelKey, result.Status });
+    }
+    catch (DomainException ex)
+    {
+        return Results.BadRequest(new { code = ex.Code, message = ex.Message });
+    }
 }).RequireAuthorization("AdminOrProductOwner");
 
-app.MapPut("/api/v1/channels/{channelKey}/status", async (string channelKey, UpdateChannelStatusRequest req, AppDbContext db, CancellationToken ct) =>
+app.MapPost("/api/v1/users", async (CreateUserRequest req, IUserService service, CancellationToken ct) =>
 {
-    var channel = await db.Channels.SingleOrDefaultAsync(x => x.ChannelKey == channelKey, ct);
-    if (channel is null) return Results.NotFound(new { code = "channel.not_found", message = "Channel not found." });
+    try
+    {
+        var result = await service.CreateAsync(req.CustomerId, req.Email, req.FirstName, req.LastName, req.PhoneNumber, ct);
+        return Results.Created($"/api/v1/users/{result.Id}", new { result.Id, result.CustomerId, result.Email, result.KycStatus });
+    }
+    catch (DomainException ex) when (ex.Code == "user.duplicate")
+    {
+        return Results.Conflict(new { code = ex.Code, message = ex.Message });
+    }
+    catch (DomainException ex)
+    {
+        return Results.BadRequest(new { code = ex.Code, message = ex.Message });
+    }
+}).RequireAuthorization();
 
-    var now = DateTimeOffset.UtcNow;
-    if (req.Status == ChannelStatus.Active) channel.Activate(now);
-    else if (req.Status == ChannelStatus.Suspended) channel.Suspend(now);
-    else if (req.Status == ChannelStatus.Revoked) channel.Revoke(now);
+app.MapGet("/api/v1/users/{userId:long}", async (long userId, IUserService service, CancellationToken ct) =>
+{
+    var user = await service.GetByIdAsync(userId, ct);
+    return user is null ? Results.NotFound(new { code = "user.not_found", message = "User not found." }) : Results.Ok(user);
+}).RequireAuthorization();
 
-    await db.SaveChangesAsync(ct);
-    return Results.Ok(new { channel.ChannelKey, channel.Status });
+app.MapGet("/api/v1/users/by-customer/{customerId}", async (string customerId, IUserService service, CancellationToken ct) =>
+{
+    var user = await service.GetByCustomerAsync(customerId, ct);
+    return user is null ? Results.NotFound(new { code = "user.not_found", message = "User not found." }) : Results.Ok(user);
+}).RequireAuthorization();
+
+app.MapPost("/api/v1/users/{userId:long}/kyc", async (long userId, SubmitKycRequest req, IKycService service, CancellationToken ct) =>
+{
+    var result = await service.SubmitAsync(userId, req.DocumentType, req.DocumentNumber, ct);
+    return result is null ? Results.NotFound(new { code = "user.not_found", message = "User not found." }) : Results.Created($"/api/v1/users/{userId}/kyc/{result.Id}", new { result.Id, result.DocumentType, result.DocumentNumber, result.Status });
+}).RequireAuthorization();
+
+app.MapGet("/api/v1/users/{userId:long}/kyc", async (long userId, IKycService service, CancellationToken ct) =>
+    Results.Ok(await service.ListAsync(userId, ct))).RequireAuthorization();
+
+app.MapPut("/api/v1/users/{userId:long}/kyc/{docId:long}/approve", async (long userId, long docId, IKycService service, CancellationToken ct) =>
+{
+    var result = await service.ApproveAsync(userId, docId, ct);
+    return result is null ? Results.NotFound(new { code = "kyc.not_found", message = "User or KYC document not found." }) : Results.Ok(new { result.DocId, result.DocStatus, result.UserKycStatus });
 }).RequireAuthorization("AdminOrProductOwner");
 
-app.MapPost("/api/v1/users", async (CreateUserRequest req, AppDbContext db, CancellationToken ct) =>
+app.MapPut("/api/v1/users/{userId:long}/kyc/{docId:long}/reject", async (long userId, long docId, RejectKycRequest req, IKycService service, CancellationToken ct) =>
 {
-    if (string.IsNullOrWhiteSpace(req.CustomerId) || string.IsNullOrWhiteSpace(req.Email))
-        return Results.BadRequest(new { code = "user.invalid", message = "CustomerId and Email are required." });
-
-    if (await db.Users.AnyAsync(x => x.CustomerId == req.CustomerId || x.Email == req.Email, ct))
-        return Results.Conflict(new { code = "user.duplicate", message = "CustomerId or Email already exists." });
-
-    var user = User.Create(req.CustomerId, req.Email, req.FirstName ?? "", req.LastName ?? "", UserRole.Customer, DateTimeOffset.UtcNow);
-    if (!string.IsNullOrWhiteSpace(req.PhoneNumber)) user.SetPhoneNumber(req.PhoneNumber, DateTimeOffset.UtcNow);
-
-    db.Users.Add(user);
-    await db.SaveChangesAsync(ct);
-    return Results.Created($"/api/v1/users/{user.Id}", new { user.Id, user.CustomerId, user.Email, user.KycStatus });
-}).RequireAuthorization();
-
-app.MapGet("/api/v1/users/{userId:long}", async (long userId, AppDbContext db, CancellationToken ct) =>
-{
-    var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == userId, ct);
-    return user is null ? Results.NotFound(new { code = "user.not_found", message = "User not found." }) : Results.Ok(new { user.Id, user.CustomerId, user.Email, user.PhoneNumber, user.FirstName, user.LastName, user.KycStatus, user.CreatedAt });
-}).RequireAuthorization();
-
-app.MapGet("/api/v1/users/by-customer/{customerId}", async (string customerId, AppDbContext db, CancellationToken ct) =>
-{
-    var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.CustomerId == customerId, ct);
-    return user is null ? Results.NotFound(new { code = "user.not_found", message = "User not found." }) : Results.Ok(new { user.Id, user.CustomerId, user.Email, user.PhoneNumber, user.FirstName, user.LastName, user.KycStatus, user.CreatedAt });
-}).RequireAuthorization();
-
-app.MapPost("/api/v1/users/{userId:long}/kyc", async (long userId, SubmitKycRequest req, AppDbContext db, CancellationToken ct) =>
-{
-    var user = await db.Users.SingleOrDefaultAsync(x => x.Id == userId, ct);
-    if (user is null) return Results.NotFound(new { code = "user.not_found", message = "User not found." });
-
-    var doc = KycDocument.Create(userId, req.DocumentType, req.DocumentNumber, DateTimeOffset.UtcNow);
-    db.KycDocuments.Add(doc);
-    user.SubmitKyc(DateTimeOffset.UtcNow);
-    await db.SaveChangesAsync(ct);
-    return Results.Created($"/api/v1/users/{userId}/kyc/{doc.Id}", new { doc.Id, doc.DocumentType, doc.DocumentNumber, doc.Status });
-}).RequireAuthorization();
-
-app.MapGet("/api/v1/users/{userId:long}/kyc", async (long userId, AppDbContext db, CancellationToken ct) =>
-{
-    var docs = await db.KycDocuments.AsNoTracking().Where(x => x.UserId == userId).Select(x => new { x.Id, x.DocumentType, x.DocumentNumber, x.Status, x.SubmittedAt, x.ReviewedAt, x.ReviewNotes }).ToListAsync(ct);
-    return Results.Ok(docs);
-}).RequireAuthorization();
-
-app.MapPut("/api/v1/users/{userId:long}/kyc/{docId:long}/approve", async (long userId, long docId, AppDbContext db, CancellationToken ct) =>
-{
-    var user = await db.Users.SingleOrDefaultAsync(x => x.Id == userId, ct);
-    if (user is null) return Results.NotFound(new { code = "user.not_found", message = "User not found." });
-
-    var doc = await db.KycDocuments.SingleOrDefaultAsync(x => x.Id == docId && x.UserId == userId, ct);
-    if (doc is null) return Results.NotFound(new { code = "kyc.not_found", message = "KYC document not found." });
-
-    doc.Approve(null, DateTimeOffset.UtcNow);
-    user.VerifyKyc(DateTimeOffset.UtcNow);
-    await db.SaveChangesAsync(ct);
-    return Results.Ok(new { doc.Id, doc.Status, user.KycStatus });
-}).RequireAuthorization("AdminOrProductOwner");
-
-app.MapPut("/api/v1/users/{userId:long}/kyc/{docId:long}/reject", async (long userId, long docId, RejectKycRequest req, AppDbContext db, CancellationToken ct) =>
-{
-    var user = await db.Users.SingleOrDefaultAsync(x => x.Id == userId, ct);
-    if (user is null) return Results.NotFound(new { code = "user.not_found", message = "User not found." });
-
-    var doc = await db.KycDocuments.SingleOrDefaultAsync(x => x.Id == docId && x.UserId == userId, ct);
-    if (doc is null) return Results.NotFound(new { code = "kyc.not_found", message = "KYC document not found." });
-
-    doc.Reject(req.Notes ?? "Rejected", DateTimeOffset.UtcNow);
-    user.RejectKyc(DateTimeOffset.UtcNow);
-    await db.SaveChangesAsync(ct);
-    return Results.Ok(new { doc.Id, doc.Status, doc.ReviewNotes, user.KycStatus });
+    var result = await service.RejectAsync(userId, docId, req.Notes, ct);
+    return result is null ? Results.NotFound(new { code = "kyc.not_found", message = "User or KYC document not found." }) : Results.Ok(new { result.DocId, result.DocStatus, result.ReviewNotes, result.UserKycStatus });
 }).RequireAuthorization("AdminOrProductOwner");
 
 app.Run();
-
-static string HashSecret(string secret) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(secret)));
-static string GenerateAppKey() => "AK" + Guid.NewGuid().ToString("N")[..24].ToUpperInvariant();
-static string GenerateAppSecret() => Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 
 record TokenRequest(string AppKey, string AppSecret);
 record LoginRequest(string Email, string Password);

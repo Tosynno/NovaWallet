@@ -30,7 +30,7 @@ public interface IWalletService
 {
     Task<WalletCreatedResult> CreateAsync(string customerId, CancellationToken ct);
     Task<BalanceResult?> GetAsync(Guid walletId, string customerId, CancellationToken ct);
-    Task CreditAsync(Guid walletId, long amountKobo, string actor, string correlationId, CancellationToken ct);
+    Task<BalanceResult> CreditAsync(Guid walletId, long amountKobo, string actor, string correlationId, CancellationToken ct);
     Task<IReadOnlyList<StatementItem>> StatementAsync(Guid walletId, int page, int pageSize, CancellationToken ct);
     Task<NameEnquiryResult?> NameEnquiryAsync(string accountNumber, CancellationToken ct);
 }
@@ -40,7 +40,12 @@ public interface ITransferService
     Task<TransferResult> TransferOutboundAsync(OutboundTransferCommand command, CancellationToken ct);
     Task<TransferResult> TransferInboundAsync(InboundTransferCommand command, CancellationToken ct);
     Task<TransferResult> QueryTransferStatusAsync(Guid transferId, string customerId, CancellationToken ct);
+    Task<TransferDetailResult?> GetTransferDetailAsync(Guid transferId, string customerId, CancellationToken ct);
+    Task<RepostResult> RepostAsync(Guid transferId, CancellationToken ct);
 }
+
+public sealed record TransferDetailResult(Guid Id, TransferType Type, TransferStatus Status, long AmountKobo, long FeeKobo, long VatKobo, long TotalDebitKobo, string Reference, string? ExternalReference, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record RepostResult(Guid TransferId, TransferStatus Status, string Message);
 
 public interface IPaymentRail
 {
@@ -68,6 +73,58 @@ public sealed record ReconciliationReportResult(
     string? Notes, string RunBy, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt);
 public sealed record ReconciliationReportSummary(Guid Id, DateOnly WatDate, ReconciliationStatus Status, long TotalOutboundAmountKobo, int TotalOutboundCount, DateTimeOffset CreatedAt);
 public sealed record ExternalAccountResult(string AccountKey, ExternalAccountType Type, string BankName, string BankCode, string AccountNumber, string AccountName, long BalanceKobo);
+
+public interface IExternalAccountService
+{
+    Task<IReadOnlyList<ExternalAccountResult>> GetAllAsync(CancellationToken ct);
+}
+
+public interface IAuthService
+{
+    Task<ChannelTokenResult?> IssueChannelTokenAsync(string appKey, string appSecret, CancellationToken ct);
+    Task<LoginResult?> LoginAsync(string email, string password, CancellationToken ct);
+    Task<RegisterResult> RegisterAsync(string email, string password, string firstName, string lastName, string? phoneNumber, CancellationToken ct);
+}
+
+public sealed record ChannelTokenResult(string Token, int ExpiresInSeconds);
+public sealed record LoginResult(string Token, int ExpiresInSeconds, string CustomerId);
+public sealed record RegisterResult(bool Success, string? Error, string? Token, int ExpiresInSeconds, string? CustomerId, Guid? WalletId, string? AccountNumber);
+
+public interface IChannelService
+{
+    Task<ChannelCreatedResult> CreateAsync(string channelKey, string channelName, CancellationToken ct);
+    Task<IReadOnlyList<ChannelListItem>> ListAsync(CancellationToken ct);
+    Task<ChannelKeysRotatedResult?> RotateKeysAsync(string channelKey, CancellationToken ct);
+    Task<ChannelStatusResult?> UpdateStatusAsync(string channelKey, ChannelStatus status, CancellationToken ct);
+}
+
+public sealed record ChannelCreatedResult(string ChannelKey, string ChannelName, ChannelStatus Status, string AppKey, string AppSecret);
+public sealed record ChannelListItem(long Id, string ChannelKey, string ChannelName, string AppKey, ChannelStatus Status, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record ChannelKeysRotatedResult(string ChannelKey, string AppKey, string AppSecret);
+public sealed record ChannelStatusResult(string ChannelKey, ChannelStatus Status);
+
+public interface IUserService
+{
+    Task<UserResult?> GetByIdAsync(long userId, CancellationToken ct);
+    Task<UserResult?> GetByCustomerAsync(string customerId, CancellationToken ct);
+    Task<UserCreatedResult> CreateAsync(string customerId, string email, string? firstName, string? lastName, string? phoneNumber, CancellationToken ct);
+}
+
+public sealed record UserResult(long Id, string CustomerId, string Email, string? PhoneNumber, string FirstName, string LastName, KycStatus KycStatus, DateTimeOffset CreatedAt);
+public sealed record UserCreatedResult(long Id, string CustomerId, string Email, KycStatus KycStatus);
+
+public interface IKycService
+{
+    Task<KycSubmittedResult?> SubmitAsync(long userId, KycDocumentType documentType, string documentNumber, CancellationToken ct);
+    Task<IReadOnlyList<KycDocumentResult>> ListAsync(long userId, CancellationToken ct);
+    Task<KycReviewResult?> ApproveAsync(long userId, long docId, CancellationToken ct);
+    Task<KycReviewResult?> RejectAsync(long userId, long docId, string? notes, CancellationToken ct);
+}
+
+public sealed record KycSubmittedResult(long Id, KycDocumentType DocumentType, string DocumentNumber, KycStatus Status);
+public sealed record KycDocumentResult(long Id, KycDocumentType DocumentType, string DocumentNumber, KycStatus Status, DateTimeOffset SubmittedAt, DateTimeOffset? ReviewedAt, string? ReviewNotes);
+public sealed record KycReviewResult(long DocId, KycStatus DocStatus, KycStatus UserKycStatus, string? ReviewNotes);
+
 public interface IClock { DateTimeOffset UtcNow { get; } }
 public sealed class SystemClock : IClock { public DateTimeOffset UtcNow => DateTimeOffset.UtcNow; }
 

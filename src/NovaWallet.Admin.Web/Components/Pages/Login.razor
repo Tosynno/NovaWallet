@@ -97,7 +97,9 @@
         var uri = Nav.ToBaseRelativePath(Nav.Uri);
         if (uri.StartsWith("login?returnUrl="))
         {
-            ReturnUrl = Uri.UnescapeDataString(uri["login?returnUrl=".Length..]);
+            var decoded = Uri.UnescapeDataString(uri["login?returnUrl=".Length..]);
+            if (decoded.StartsWith('/') && !decoded.StartsWith("//"))
+                ReturnUrl = decoded;
         }
     }
 

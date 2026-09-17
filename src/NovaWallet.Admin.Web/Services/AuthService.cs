@@ -6,9 +6,9 @@ namespace NovaWallet.Admin.Web.Services;
 public sealed class AuthService
 {
     private readonly AdminCredentialOptions _creds;
-    public string? Username { get; set; }
-    public string? DisplayName { get; set; }
-    public bool IsAuthenticated { get; set; }
+    public string? Username { get; private set; }
+    public string? DisplayName { get; private set; }
+    public bool IsAuthenticated { get; private set; }
 
     public AuthService(IConfiguration config)
     {

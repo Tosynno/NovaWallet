@@ -37,28 +37,29 @@
             <div class="tx-summary-divider"></div>
             <div class="tx-summary-item">
                 <p class="tx-summary-label">Credits</p>
-                <p class="tx-summary-value text-credit">@Items.Count(x => x.Direction == "Credit")</p>
+                <p class="tx-summary-value text-credit">@(Items.Count(x => x.Direction?.Equals("Credit", StringComparison.OrdinalIgnoreCase) == true))</p>
             </div>
             <div class="tx-summary-divider"></div>
             <div class="tx-summary-item">
                 <p class="tx-summary-label">Debits</p>
-                <p class="tx-summary-value text-debit">@Items.Count(x => x.Direction == "Debit")</p>
+                <p class="tx-summary-value text-debit">@(Items.Count(x => x.Direction?.Equals("Debit", StringComparison.OrdinalIgnoreCase) == true))</p>
             </div>
         </div>
 
         <div class="wallet-tx-list">
             @foreach (var item in Items)
             {
+                var isDebit = item.Direction?.Equals("Debit", StringComparison.OrdinalIgnoreCase) == true;
                 <div class="wallet-tx-item">
-                    <div class="wallet-tx-icon @(item.Direction == "Debit" ? "tx-debit" : "tx-credit")">
-                        <span class="oi @(item.Direction == "Debit" ? "oi-arrow-top" : "oi-arrow-bottom")"></span>
+                    <div class="wallet-tx-icon @(isDebit ? "tx-debit" : "tx-credit")">
+                        <span class="oi @(isDebit ? "oi-arrow-top" : "oi-arrow-bottom")"></span>
                     </div>
                     <div class="wallet-tx-info">
                         <p class="wallet-tx-title">@item.Leg</p>
                         <p class="wallet-tx-date">@item.CreatedAt.ToString("MMM dd, yyyy • HH:mm")</p>
                     </div>
-                    <div class="wallet-tx-amount @(item.Direction == "Debit" ? "text-debit" : "text-credit")">
-                        @(item.Direction == "Debit" ? "-" : "+") N @((item.AmountKobo / 100m).ToString("N2"))
+                    <div class="wallet-tx-amount @(isDebit ? "text-debit" : "text-credit")">
+                        @(isDebit ? "-" : "+") N @((item.AmountKobo / 100m).ToString("N2"))
                     </div>
                 </div>
             }

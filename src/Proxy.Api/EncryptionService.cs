@@ -9,7 +9,7 @@ public sealed class EncryptionService
 
     public EncryptionService(IConfiguration config)
     {
-        var keyStr = config["Encryption:Key"] ?? "NovaWallet2026EncryptionKey32Bytes!";
+        var keyStr = config["Encryption:Key"] ?? throw new InvalidOperationException("Encryption:Key is required.");
         _key = SHA256.HashData(Encoding.UTF8.GetBytes(keyStr));
     }
 
