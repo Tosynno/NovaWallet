@@ -5,47 +5,98 @@
 
 <PageTitle>Statement - NovaWallet</PageTitle>
 
-<div class="container-fluid">
-    <h2>Transaction Statement</h2>
-    <hr />
-    <div class="card mb-3"><div class="card-body">
-        <div class="d-flex gap-3 align-items-end flex-wrap">
-            <div class="flex-grow-1" style="min-width:280px">
-                <label class="form-label">Wallet ID</label>
-                <input class="form-control monospace" placeholder="00000000-0000-0000-0000-000000000000" @bind="WalletIdInput" />
-            </div>
-            <div><label class="form-label">Page</label><input type="number" class="form-control" style="width:90px" @bind="Page" /></div>
-            <div><label class="form-label">Size</label><input type="number" class="form-control" style="width:90px" @bind="PageSize" /></div>
-            <button class="btn btn-primary" @onclick="LoadStatement"><span class="oi oi-list me-1"></span> Load</button>
-        </div>
-    </div></div>
+<div class="wallet-page">
+    <div class="wallet-page-header">
+        <h2>Transaction History</h2>
+        <p>View all credits and debits on your wallet</p>
+    </div>
 
-    @if (Items is not null)
+    <div class="wallet-find-wallet">
+        <p class="wallet-section-label"><span class="oi oi-wallet" style="font-size:0.8rem;margin-right:0.3rem"></span> Enter Wallet ID</p>
+        <div class="wallet-input-row">
+            <input class="wallet-input" placeholder="Enter your Wallet ID (e.g. 00000000-0000-...)" @bind="WalletIdInput" />
+            <button class="btn-primary-sm" @onclick="LoadStatement"><span class="oi oi-list me-1"></span> Load</button>
+        </div>
+    </div>
+
+    @if (ErrorMessage is not null)
     {
-        <div class="card"><div class="card-body p-0">
-            <table class="table table-striped table-hover mb-0">
-                <thead><tr><th>Transfer ID</th><th>Direction</th><th>Amount (kobo)</th><th>Leg</th><th>Date</th></tr></thead>
-                <tbody>
-                    @foreach (var item in Items)
-                    {
-                        <tr>
-                            <td><span class="monospace">@(item.TransferId?.ToString()[..8] + "...")</span></td>
-                            <td><span class="badge @(item.Direction == "Debit" ? "bg-danger" : "bg-success")">@item.Direction</span></td>
-                            <td>@item.AmountKobo</td>
-                            <td>@item.Leg</td>
-                            <td class="text-muted small">@item.CreatedAt</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div></div>
-        <div class="d-flex gap-2 mt-3 justify-content-center align-items-center">
-            <button class="btn btn-outline-primary btn-sm" disabled="@(Page <= 1)" @onclick='async () => { Page--; await LoadStatement(); }'><span class="oi oi-chevron-left"></span> Previous</button>
-            <span class="text-muted small">Page @Page</span>
-            <button class="btn btn-outline-primary btn-sm" disabled="@(Items is null || Items.Count < PageSize)" @onclick='async () => { Page++; await LoadStatement(); }'>Next <span class="oi oi-chevron-right"></span></button>
+        <div class="auth-alert-error mb-3">
+            <span class="oi oi-warning" style="font-size:0.9rem"></span>
+            <span>@ErrorMessage</span>
         </div>
     }
-    @if (ErrorMessage is not null) { <div class="alert alert-danger mt-2">@ErrorMessage</div> }
+
+    @if (Items is not null && Items.Count > 0)
+    {
+        <div class="wallet-tx-summary">
+            <div class="tx-summary-item">
+                <p class="tx-summary-label">Total Transactions</p>
+                <p class="tx-summary-value">@Items.Count</p>
+            </div>
+            <div class="tx-summary-divider"></div>
+            <div class="tx-summary-item">
+                <p class="tx-summary-label">Credits</p>
+                <p class="tx-summary-value text-credit">@Items.Count(x => x.Direction == "Credit")</p>
+            </div>
+            <div class="tx-summary-divider"></div>
+            <div class="tx-summary-item">
+                <p class="tx-summary-label">Debits</p>
+                <p class="tx-summary-value text-debit">@Items.Count(x => x.Direction == "Debit")</p>
+            </div>
+        </div>
+
+        <div class="wallet-tx-list">
+            @foreach (var item in Items)
+            {
+                <div class="wallet-tx-item">
+                    <div class="wallet-tx-icon @(item.Direction == "Debit" ? "tx-debit" : "tx-credit")">
+                        <span class="oi @(item.Direction == "Debit" ? "oi-arrow-top" : "oi-arrow-bottom")"></span>
+                    </div>
+                    <div class="wallet-tx-info">
+                        <p class="wallet-tx-title">@item.Leg</p>
+                        <p class="wallet-tx-date">@item.CreatedAt.ToString("MMM dd, yyyy • HH:mm")</p>
+                    </div>
+                    <div class="wallet-tx-amount @(item.Direction == "Debit" ? "text-debit" : "text-credit")">
+                        @(item.Direction == "Debit" ? "-" : "+") N @((item.AmountKobo / 100m).ToString("N2"))
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="wallet-pagination">
+            <button class="btn-ghost-sm" disabled="@(Page <= 1)" @onclick='async () => { Page--; await LoadStatement(); }'>
+                <span class="oi oi-chevron-left"></span> Previous
+            </button>
+            <span class="wallet-page-info">Page @Page</span>
+            <button class="btn-ghost-sm" disabled="@(Items is null || Items.Count < PageSize)" @onclick='async () => { Page++; await LoadStatement(); }'>
+                Next <span class="oi oi-chevron-right"></span>
+            </button>
+        </div>
+    }
+    else if (Items is not null && Items.Count == 0)
+    {
+        <div class="wallet-empty">
+            <div class="wallet-empty-icon"><span class="oi oi-document"></span></div>
+            <p>No transactions yet</p>
+            <span>Make your first transfer to see it here</span>
+            <a href="/transfer" class="btn-primary-sm mt-3"><span class="oi oi-transfer me-1"></span> New Transfer</a>
+        </div>
+    }
+    else if (Loading)
+    {
+        <div class="wallet-loading">
+            <span class="spinner" style="border-color:rgba(0,168,107,0.2);border-top-color:var(--nw-accent);width:28px;height:28px"></span>
+            <p>Loading transactions...</p>
+        </div>
+    }
+    else
+    {
+        <div class="wallet-empty">
+            <div class="wallet-empty-icon"><span class="oi oi-list"></span></div>
+            <p>Enter your Wallet ID to view transactions</p>
+        </div>
+    }
 </div>
 
 @code {
@@ -53,14 +104,16 @@
     private int Page = 1;
     private int PageSize = 25;
     private List<StatementItem>? Items;
+    private bool Loading;
     private string? ErrorMessage;
 
     private async Task LoadStatement()
     {
-        if (!Guid.TryParse(WalletIdInput, out var id)) { ErrorMessage = "Invalid Wallet ID"; return; }
-        ErrorMessage = null;
+        if (!Guid.TryParse(WalletIdInput, out var id)) { ErrorMessage = "Invalid Wallet ID. Please enter a valid GUID."; return; }
+        ErrorMessage = null; Loading = true;
         try { Items = await Api.GetAsync<List<StatementItem>>($"/api/v1/wallets/{id}/transactions?page={Page}&pageSize={PageSize}"); }
         catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { Loading = false; }
     }
 
     public sealed class StatementItem { public Guid? TransferId { get; set; } public string Direction { get; set; } = ""; public long AmountKobo { get; set; } public string Leg { get; set; } = ""; public DateTime CreatedAt { get; set; } }

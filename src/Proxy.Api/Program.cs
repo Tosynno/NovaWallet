@@ -1,7 +1,9 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
+using NovaWallet.ProxyApi;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +21,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
 builder.Services.AddAuthorization();
 
 builder.Services.AddReverseProxy().LoadFromConfig(cfg.GetSection("ReverseProxy"));
+builder.Services.AddSingleton<EncryptionService>();
 
 builder.Services.AddRateLimiter(o =>
 {
@@ -156,6 +159,60 @@ app.Use(async (ctx, next) =>
         return;
     }
     await next();
+});
+
+app.Use(async (ctx, next) =>
+{
+    var isApiRoute = ctx.Request.Path.StartsWithSegments("/api");
+    var encryption = ctx.RequestServices.GetRequiredService<EncryptionService>();
+
+    if (isApiRoute && ctx.Request.ContentType?.Contains("application/json") == true && ctx.Request.ContentLength > 0)
+    {
+        ctx.Request.EnableBuffering();
+        using var reader = new StreamReader(ctx.Request.Body, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+        ctx.Request.Body.Position = 0;
+
+        try
+        {
+            var wrapper = JsonSerializer.Deserialize<EncryptionService.EncryptedWrapper>(body);
+            if (wrapper?.Data is not null)
+            {
+                var decrypted = encryption.Decrypt(wrapper.Data);
+                var bytes = Encoding.UTF8.GetBytes(decrypted);
+                ctx.Request.Body = new MemoryStream(bytes);
+                ctx.Request.ContentLength = bytes.Length;
+            }
+        }
+        catch { }
+    }
+
+    var originalStream = ctx.Response.Body;
+    using var buffer = new MemoryStream();
+    ctx.Response.Body = buffer;
+
+    await next();
+
+    if (isApiRoute && buffer.Length > 0)
+    {
+        buffer.Seek(0, SeekOrigin.Begin);
+        var responseContent = await new StreamReader(buffer).ReadToEndAsync();
+        if (!string.IsNullOrEmpty(responseContent))
+        {
+            var encrypted = encryption.Encrypt(responseContent);
+            var wrapped = JsonSerializer.Serialize(new { Data = encrypted });
+            var bytes = Encoding.UTF8.GetBytes(wrapped);
+            ctx.Response.Body = originalStream;
+            ctx.Response.ContentLength = bytes.Length;
+            ctx.Response.ContentType = "application/json";
+            await ctx.Response.Body.WriteAsync(bytes);
+            return;
+        }
+    }
+
+    buffer.Seek(0, SeekOrigin.Begin);
+    await buffer.CopyToAsync(originalStream);
+    ctx.Response.Body = originalStream;
 });
 
 app.MapReverseProxy();

@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using NovaWallet.Domain;
 using NovaWallet.Infrastructure;
+using NovaWallet.Application;
 
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
@@ -71,6 +72,98 @@ app.MapPost("/api/v1/auth/token", async (TokenRequest req, AppDbContext db, ICon
         issuer: cfg["Jwt:Issuer"], audience: cfg["Jwt:Audience"],
         claims: claims, expires: DateTime.UtcNow.AddMinutes(expiryMinutes), signingCredentials: creds);
     return Results.Ok(new { token = new JwtSecurityTokenHandler().WriteToken(token), expiresInSeconds = expiryMinutes * 60 });
+}).AllowAnonymous();
+
+app.MapPost("/api/v1/auth/login", async (LoginRequest req, AppDbContext db, IConfiguration cfg, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
+        return Results.BadRequest(new { code = "auth.missing_credentials", message = "Email and Password are required." });
+
+    var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Email == req.Email, ct);
+    if (user is null || string.IsNullOrEmpty(user.PasswordHash))
+        return Results.Unauthorized();
+
+    var passwordHash = HashSecret(req.Password);
+    if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(user.PasswordHash), Encoding.UTF8.GetBytes(passwordHash)))
+        return Results.Unauthorized();
+
+    var expiryMinutes = cfg.GetValue<int>("Jwt:ExpiryMinutes", 60);
+    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(cfg["Jwt:Key"]!));
+    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+    var claims = new List<Claim>
+    {
+        new("sub", user.CustomerId),
+        new("email", user.Email),
+        new("role", user.Role.ToString().ToLowerInvariant())
+    };
+    var token = new JwtSecurityToken(
+        issuer: cfg["Jwt:Issuer"], audience: cfg["Jwt:Audience"],
+        claims: claims, expires: DateTime.UtcNow.AddMinutes(expiryMinutes), signingCredentials: creds);
+    return Results.Ok(new { token = new JwtSecurityTokenHandler().WriteToken(token), expiresInSeconds = expiryMinutes * 60, customerId = user.CustomerId });
+}).AllowAnonymous();
+
+app.MapPost("/api/v1/auth/register", async (RegisterRequest req, AppDbContext db, IConfiguration cfg, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
+        return Results.BadRequest(new { code = "auth.missing_credentials", message = "Email and Password are required." });
+
+    if (await db.Users.AnyAsync(x => x.Email == req.Email, ct))
+        return Results.Conflict(new { code = "user.duplicate", message = "Email already registered." });
+
+    var customerId = Guid.NewGuid().ToString("N");
+    var passwordHash = HashSecret(req.Password);
+    var now = DateTimeOffset.UtcNow;
+    var expiryMinutes = cfg.GetValue<int>("Jwt:ExpiryMinutes", 60);
+
+    Guid walletId = Guid.Empty;
+    string accountNumber = "";
+
+    for (var attempt = 0; attempt < 5; attempt++)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var user = User.Create(customerId, req.Email, req.FirstName ?? "", req.LastName ?? "", UserRole.Customer, now, passwordHash);
+            if (!string.IsNullOrWhiteSpace(req.PhoneNumber)) user.SetPhoneNumber(req.PhoneNumber, now);
+            db.Users.Add(user);
+
+            accountNumber = AccountNumberGenerator.Generate();
+            var wallet = Wallet.CreateCustomer(customerId, accountNumber, now);
+            db.Wallets.Add(wallet);
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+
+            walletId = wallet.Id;
+            break;
+        }
+        catch (DbUpdateException) when (attempt < 4)
+        {
+            await tx.RollbackAsync(ct);
+            db.ChangeTracker.Clear();
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+    }
+
+    if (walletId == Guid.Empty)
+        return Results.Problem(statusCode: 500, title: "Could not allocate a unique account number.");
+
+    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(cfg["Jwt:Key"]!));
+    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+    var claims = new List<Claim>
+    {
+        new("sub", customerId),
+        new("email", req.Email),
+        new("role", "customer")
+    };
+    var token = new JwtSecurityToken(
+        issuer: cfg["Jwt:Issuer"], audience: cfg["Jwt:Audience"],
+        claims: claims, expires: DateTime.UtcNow.AddMinutes(expiryMinutes), signingCredentials: creds);
+    return Results.Ok(new { token = new JwtSecurityTokenHandler().WriteToken(token), expiresInSeconds = expiryMinutes * 60, customerId, walletId, accountNumber });
 }).AllowAnonymous();
 
 app.MapPost("/api/v1/channels", async (CreateChannelRequest req, AppDbContext db, CancellationToken ct) =>
@@ -204,6 +297,8 @@ static string GenerateAppKey() => "AK" + Guid.NewGuid().ToString("N")[..24].ToUp
 static string GenerateAppSecret() => Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 
 record TokenRequest(string AppKey, string AppSecret);
+record LoginRequest(string Email, string Password);
+record RegisterRequest(string Email, string Password, string? FirstName, string? LastName, string? PhoneNumber);
 record CreateChannelRequest(string ChannelKey, string ChannelName);
 record UpdateChannelStatusRequest(ChannelStatus Status);
 record CreateUserRequest(string CustomerId, string Email, string? FirstName, string? LastName, string? PhoneNumber);

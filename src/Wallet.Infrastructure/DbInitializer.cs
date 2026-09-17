@@ -32,12 +32,13 @@ public static class DbInitializer
             await db.Database.EnsureCreatedAsync(ct);
         }
 
+        await EnsureColumnAsync(db, "Users", "PasswordHash", "NVARCHAR(256) NULL", ct);
+
         await SeedSystemAccountsAsync(db, ct);
         await SeedExternalAccountsAsync(db, ct);
 
         await db.Database.ExecuteSqlRawAsync("""
-            IF OBJECT_ID(N'trg_AuditLogs_Immutable', N'TR') IS NOT NULL DROP TRIGGER trg_AuditLogs_Immutable;
-            EXEC('CREATE TRIGGER trg_AuditLogs_Immutable ON AuditLogs
+            EXEC('CREATE OR ALTER TRIGGER trg_AuditLogs_Immutable ON AuditLogs
                   FOR UPDATE, DELETE
                   AS
                   BEGIN
@@ -45,6 +46,15 @@ public static class DbInitializer
                       ROLLBACK TRANSACTION;
                   END');
             """, ct);
+    }
+
+    private static async Task EnsureColumnAsync(AppDbContext db, string table, string column, string definition, CancellationToken ct)
+    {
+        var sql = $"""
+            IF COL_LENGTH('{table}', '{column}') IS NULL
+                EXEC('ALTER TABLE [{table}] ADD [{column}] {definition}');
+            """;
+        await db.Database.ExecuteSqlRawAsync(sql, ct);
     }
 
     private static async Task SeedSystemAccountsAsync(AppDbContext db, CancellationToken ct)

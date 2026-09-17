@@ -5,118 +5,227 @@ using System.Text.Json;
 
 namespace NovaWallet.Web.Services;
 
-public sealed class AuthService
+public sealed class ChannelTokenService
 {
-    private readonly HttpClient _http;
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly EncryptionService _crypto;
-    public string? Token { get; set; }
-    public string? ChannelKey { get; set; }
-    public string? ChannelName { get; set; }
-    public bool IsAuthenticated => !string.IsNullOrWhiteSpace(Token);
+    private readonly string? _appKey;
+    private readonly string? _appSecret;
+    private readonly SemaphoreSlim _lock = new(1, 1);
 
-    public AuthService(HttpClient http, EncryptionService crypto)
+    public string? Token { get; private set; }
+    public DateTimeOffset ExpiresAt { get; private set; }
+
+    public ChannelTokenService(IHttpClientFactory httpClientFactory, EncryptionService crypto, IConfiguration config)
     {
-        _http = http;
+        _httpClientFactory = httpClientFactory;
         _crypto = crypto;
+        _appKey = config["Channel:AppKey"];
+        _appSecret = config["Channel:AppSecret"];
     }
 
-    public void SetToken(string token, string channelKey, string channelName)
+    public bool IsValid => !string.IsNullOrWhiteSpace(Token) && DateTimeOffset.UtcNow < ExpiresAt;
+
+    public async Task<string?> EnsureTokenAsync()
     {
-        Token = token;
-        ChannelKey = channelKey;
-        ChannelName = channelName;
-        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        if (IsValid) return Token;
+        await _lock.WaitAsync();
+        try
+        {
+            if (IsValid) return Token;
+            await RefreshTokenAsync();
+            return Token;
+        }
+        finally { _lock.Release(); }
     }
 
-    public void Logout()
+    private async Task RefreshTokenAsync()
     {
-        Token = null;
-        ChannelKey = null;
-        ChannelName = null;
-        _http.DefaultRequestHeaders.Authorization = null;
-    }
-
-    public async Task<bool> LoginAsync(string appKey, string appSecret)
-    {
-        var payload = JsonSerializer.Serialize(new { AppKey = appKey, AppSecret = appSecret });
+        var http = _httpClientFactory.CreateClient("ChannelApi");
+        var payload = JsonSerializer.Serialize(new { AppKey = _appKey, AppSecret = _appSecret });
         var encrypted = _crypto.Encrypt(payload);
-        var content = new StringContent(JsonSerializer.Serialize(new { Data = encrypted }), Encoding.UTF8, "application/json");
-        var response = await _http.PostAsync("/api/v1/auth/token", content);
-        if (!response.IsSuccessStatusCode) return false;
+        var wrapper = JsonSerializer.Serialize(new { Data = encrypted });
+        var content = new StringContent(wrapper, Encoding.UTF8, "application/json");
+        var response = await http.PostAsync("/api/v1/auth/token", content);
+        if (!response.IsSuccessStatusCode) return;
         var raw = await response.Content.ReadAsStringAsync();
-        var wrapper = JsonSerializer.Deserialize<EncryptedResponse>(raw);
-        if (wrapper?.Data is null) return false;
-        var decrypted = _crypto.Decrypt(wrapper.Data);
-        var result = JsonSerializer.Deserialize<TokenResponse>(decrypted);
-        if (result is null) return false;
-        SetToken(result.Token, "", "");
-        return true;
+        var respWrapper = JsonSerializer.Deserialize<EncryptedResponse>(raw, JsonOpts);
+        string json = respWrapper?.Data is not null ? _crypto.Decrypt(respWrapper.Data) : raw;
+        var result = JsonSerializer.Deserialize<TokenResponse>(json, JsonOpts);
+        if (result is null || string.IsNullOrWhiteSpace(result.Token)) return;
+        Token = result.Token;
+        ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(result.ExpiresInSeconds - 30, 60));
     }
 
     public record TokenResponse(string Token, int ExpiresInSeconds);
     public sealed record EncryptedResponse(string? Data);
 }
 
+public sealed class AuthService
+{
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly EncryptionService _crypto;
+    private readonly ChannelTokenService _channel;
+
+    public string? Token { get; private set; }
+    public DateTimeOffset TokenExpiry { get; private set; }
+    public string? CustomerId { get; private set; }
+    public string? WalletId { get; private set; }
+    public string? AccountNumber { get; private set; }
+    public bool IsAuthenticated => !string.IsNullOrWhiteSpace(Token) && DateTimeOffset.UtcNow < TokenExpiry;
+
+    public AuthService(IHttpClientFactory httpClientFactory, EncryptionService crypto, ChannelTokenService channel)
+    {
+        _httpClientFactory = httpClientFactory;
+        _crypto = crypto;
+        _channel = channel;
+    }
+
+    private void SetUserToken(string token, int expiresInSeconds, string? customerId, string? walletId, string? accountNumber)
+    {
+        Token = token;
+        TokenExpiry = DateTimeOffset.UtcNow.AddSeconds(Math.Max(expiresInSeconds - 30, 60));
+        CustomerId = customerId;
+        WalletId = walletId;
+        AccountNumber = accountNumber;
+    }
+
+    public void Logout()
+    {
+        Token = null;
+        TokenExpiry = DateTimeOffset.MinValue;
+        CustomerId = null;
+        WalletId = null;
+        AccountNumber = null;
+    }
+
+    public async Task<bool> LoginAsync(string email, string password)
+    {
+        var channelToken = await _channel.EnsureTokenAsync();
+        if (string.IsNullOrWhiteSpace(channelToken)) return false;
+
+        var http = _httpClientFactory.CreateClient("ChannelApi");
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", channelToken);
+
+        var payload = JsonSerializer.Serialize(new { Email = email, Password = password });
+        var encrypted = _crypto.Encrypt(payload);
+        var wrapper = JsonSerializer.Serialize(new { Data = encrypted });
+        var content = new StringContent(wrapper, Encoding.UTF8, "application/json");
+
+        var response = await http.PostAsync("/api/v1/auth/login", content);
+        if (!response.IsSuccessStatusCode) return false;
+
+        var result = await DeserializeResponseAsync<LoginResponse>(response);
+        if (result is null || string.IsNullOrWhiteSpace(result.Token)) return false;
+        SetUserToken(result.Token, result.ExpiresInSeconds, result.CustomerId, result.WalletId, result.AccountNumber);
+        return true;
+    }
+
+    public async Task<(bool Success, string? Error)> RegisterAsync(string email, string password, string firstName, string lastName, string? phoneNumber)
+    {
+        var channelToken = await _channel.EnsureTokenAsync();
+        if (string.IsNullOrWhiteSpace(channelToken)) return (false, "Channel authentication failed.");
+
+        var http = _httpClientFactory.CreateClient("ChannelApi");
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", channelToken);
+
+        var payload = JsonSerializer.Serialize(new { Email = email, Password = password, FirstName = firstName, LastName = lastName, PhoneNumber = phoneNumber });
+        var encrypted = _crypto.Encrypt(payload);
+        var wrapper = JsonSerializer.Serialize(new { Data = encrypted });
+        var content = new StringContent(wrapper, Encoding.UTF8, "application/json");
+
+        var response = await http.PostAsync("/api/v1/auth/register", content);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errRaw = await response.Content.ReadAsStringAsync();
+            try
+            {
+                var errWrapper = JsonSerializer.Deserialize<EncryptedResponse>(errRaw, JsonOpts);
+                if (errWrapper?.Data is not null)
+                    errRaw = _crypto.Decrypt(errWrapper.Data);
+                var err = JsonSerializer.Deserialize<ErrorResponse>(errRaw, JsonOpts);
+                return (false, err?.Message ?? $"Registration failed ({response.StatusCode}).");
+            }
+            catch { return (false, $"Registration failed ({response.StatusCode})."); }
+        }
+
+        var result = await DeserializeResponseAsync<LoginResponse>(response);
+        if (result is null || string.IsNullOrWhiteSpace(result.Token)) return (false, "Registration failed.");
+        SetUserToken(result.Token, result.ExpiresInSeconds, result.CustomerId, result.WalletId, result.AccountNumber);
+        return (true, null);
+    }
+
+    private async Task<T?> DeserializeResponseAsync<T>(HttpResponseMessage response)
+    {
+        var raw = await response.Content.ReadAsStringAsync();
+        var wrapper = JsonSerializer.Deserialize<EncryptedResponse>(raw, JsonOpts);
+        string json = wrapper?.Data is not null ? _crypto.Decrypt(wrapper.Data) : raw;
+        return JsonSerializer.Deserialize<T>(json, JsonOpts);
+    }
+
+    public record LoginResponse(string Token, int ExpiresInSeconds, string? CustomerId, string? WalletId, string? AccountNumber);
+    public record ErrorResponse(string Code, string Message);
+    public sealed record EncryptedResponse(string? Data);
+}
+
 public sealed class ApiClient
 {
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
     public HttpClient Http { get; }
     private readonly EncryptionService _crypto;
+    private readonly ChannelTokenService _channel;
     private readonly AuthService _auth;
 
-    public ApiClient(HttpClient http, EncryptionService crypto, AuthService auth)
+    public ApiClient(HttpClient http, EncryptionService crypto, ChannelTokenService channel, AuthService auth)
     {
         Http = http;
         _crypto = crypto;
+        _channel = channel;
         _auth = auth;
     }
 
-    private void EnsureAuthHeader()
+    private async Task EnsureAuthHeaderAsync()
     {
-        if (!string.IsNullOrWhiteSpace(_auth.Token))
-            Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _auth.Token);
+        var channelToken = await _channel.EnsureTokenAsync();
+        var userToken = _auth.IsAuthenticated ? _auth.Token : null;
+        var token = userToken ?? channelToken;
+        if (!string.IsNullOrWhiteSpace(token))
+            Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
     }
 
     public async Task<T?> GetAsync<T>(string path)
     {
-        EnsureAuthHeader();
+        await EnsureAuthHeaderAsync();
         var response = await Http.GetAsync(path);
         if (!response.IsSuccessStatusCode) return default;
-        var raw = await response.Content.ReadAsStringAsync();
-        var wrapper = System.Text.Json.JsonSerializer.Deserialize<EncryptedResponse>(raw);
-        if (wrapper?.Data is null)
-            return System.Text.Json.JsonSerializer.Deserialize<T>(raw);
-        var decrypted = _crypto.Decrypt(wrapper.Data);
-        return System.Text.Json.JsonSerializer.Deserialize<T>(decrypted);
+        return await DecryptResponseAsync<T>(response);
     }
 
     public async Task<T?> PostAsync<T>(string path, object body)
     {
-        EnsureAuthHeader();
-        var payload = System.Text.Json.JsonSerializer.Serialize(body);
+        await EnsureAuthHeaderAsync();
+        var payload = JsonSerializer.Serialize(body);
         var encrypted = _crypto.Encrypt(payload);
-        var wrapper = System.Text.Json.JsonSerializer.Serialize(new { Data = encrypted });
+        var wrapper = JsonSerializer.Serialize(new { Data = encrypted });
         var content = new StringContent(wrapper, Encoding.UTF8, "application/json");
         var response = await Http.PostAsync(path, content);
         if (!response.IsSuccessStatusCode) return default;
-        var raw = await response.Content.ReadAsStringAsync();
-        var respWrapper = System.Text.Json.JsonSerializer.Deserialize<EncryptedResponse>(raw);
-        if (respWrapper?.Data is null)
-            return System.Text.Json.JsonSerializer.Deserialize<T>(raw);
-        var decrypted = _crypto.Decrypt(respWrapper.Data);
-        return System.Text.Json.JsonSerializer.Deserialize<T>(decrypted);
+        return await DecryptResponseAsync<T>(response);
     }
 
     public async Task<bool> PostNoResponseAsync(string path, object? body = null)
     {
-        EnsureAuthHeader();
+        await EnsureAuthHeaderAsync();
         if (body is null)
         {
             var resp = await Http.PostAsync(path, null);
             return resp.IsSuccessStatusCode;
         }
-        var payload = System.Text.Json.JsonSerializer.Serialize(body);
+        var payload = JsonSerializer.Serialize(body);
         var encrypted = _crypto.Encrypt(payload);
-        var wrapper = System.Text.Json.JsonSerializer.Serialize(new { Data = encrypted });
+        var wrapper = JsonSerializer.Serialize(new { Data = encrypted });
         var content = new StringContent(wrapper, Encoding.UTF8, "application/json");
         var response = await Http.PostAsync(path, content);
         return response.IsSuccessStatusCode;
@@ -124,18 +233,28 @@ public sealed class ApiClient
 
     public async Task<bool> PutNoResponseAsync(string path, object? body = null)
     {
-        EnsureAuthHeader();
+        await EnsureAuthHeaderAsync();
         if (body is null)
         {
             var resp = await Http.PutAsync(path, null);
             return resp.IsSuccessStatusCode;
         }
-        var payload = System.Text.Json.JsonSerializer.Serialize(body);
+        var payload = JsonSerializer.Serialize(body);
         var encrypted = _crypto.Encrypt(payload);
-        var wrapper = System.Text.Json.JsonSerializer.Serialize(new { Data = encrypted });
+        var wrapper = JsonSerializer.Serialize(new { Data = encrypted });
         var content = new StringContent(wrapper, Encoding.UTF8, "application/json");
         var response = await Http.PutAsync(path, content);
         return response.IsSuccessStatusCode;
+    }
+
+    private async Task<T?> DecryptResponseAsync<T>(HttpResponseMessage response)
+    {
+        var raw = await response.Content.ReadAsStringAsync();
+        var wrapper = JsonSerializer.Deserialize<EncryptedResponse>(raw, JsonOpts);
+        if (wrapper?.Data is null)
+            return JsonSerializer.Deserialize<T>(raw, JsonOpts);
+        var decrypted = _crypto.Decrypt(wrapper.Data);
+        return JsonSerializer.Deserialize<T>(decrypted, JsonOpts);
     }
 
     public sealed record EncryptedResponse(string? Data);
@@ -149,7 +268,7 @@ public sealed class CustomAuthStateProvider(AuthService auth) : Microsoft.AspNet
         {
             var identity = new System.Security.Claims.ClaimsIdentity(new[]
             {
-                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, auth.ChannelKey ?? "user"),
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, auth.CustomerId ?? "user"),
             }, "jwt");
             var user = new System.Security.Claims.ClaimsPrincipal(identity);
             return Task.FromResult(new Microsoft.AspNetCore.Components.Authorization.AuthenticationState(user));

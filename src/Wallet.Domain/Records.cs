@@ -311,6 +311,7 @@ public sealed class User
     public long Id { get; private set; }
     public string CustomerId { get; private set; } = null!;
     public string Email { get; private set; } = null!;
+    public string? PasswordHash { get; private set; }
     public string? PhoneNumber { get; private set; }
     public string FirstName { get; private set; } = null!;
     public string LastName { get; private set; } = null!;
@@ -319,7 +320,7 @@ public sealed class User
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
-    public static User Create(string customerId, string email, string firstName, string lastName, UserRole role, DateTimeOffset now) =>
+    public static User Create(string customerId, string email, string firstName, string lastName, UserRole role, DateTimeOffset now, string? passwordHash = null) =>
         new()
         {
             CustomerId = customerId,
@@ -327,6 +328,7 @@ public sealed class User
             FirstName = firstName,
             LastName = lastName,
             Role = role,
+            PasswordHash = passwordHash,
             KycStatus = KycStatus.Pending,
             CreatedAt = now,
             UpdatedAt = now

@@ -1,0 +1,129 @@
+@page "/register"
+@layout NovaWallet.Web.Components.Layout.AuthLayout
+@using NovaWallet.Web.Services
+@inject AuthService Auth
+@inject CustomAuthStateProvider AuthStateProvider
+@inject NavigationManager Nav
+
+<PageTitle>Sign Up - NovaWallet</PageTitle>
+
+<div class="auth-form-card" style="max-width:460px">
+    <div class="auth-form-header">
+        <h2>Create your account</h2>
+        <p>Get a wallet account number in seconds — no paperwork required</p>
+    </div>
+    @if (ErrorMessage is not null)
+    {
+        <div class="auth-alert-error">
+            <span class="oi oi-warning" style="font-size:0.9rem"></span>
+            <span>@ErrorMessage</span>
+        </div>
+    }
+    <EditForm Model="@RegisterModel" FormName="customer-register" OnValidSubmit="@DoRegister">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="text-danger small mb-2" />
+        <div class="auth-field-row">
+            <div class="auth-field">
+                <label>First Name</label>
+                <div class="auth-input-wrap">
+                    <span class="oi oi-person auth-input-icon"></span>
+                    <InputText class="form-control auth-input" placeholder="John" @bind-Value="RegisterModel.FirstName" />
+                </div>
+            </div>
+            <div class="auth-field">
+                <label>Last Name</label>
+                <div class="auth-input-wrap">
+                    <span class="oi oi-person auth-input-icon"></span>
+                    <InputText class="form-control auth-input" placeholder="Doe" @bind-Value="RegisterModel.LastName" />
+                </div>
+            </div>
+        </div>
+        <div class="auth-field">
+            <label>Email Address</label>
+            <div class="auth-input-wrap">
+                <span class="oi oi-envelope auth-input-icon"></span>
+                <InputText class="form-control auth-input" placeholder="you@example.com" @bind-Value="RegisterModel.Email" autocomplete="email" />
+            </div>
+        </div>
+        <div class="auth-field">
+            <label>Phone Number</label>
+            <div class="auth-input-wrap">
+                <span class="oi oi-phone auth-input-icon"></span>
+                <InputText class="form-control auth-input" placeholder="08012345678" @bind-Value="RegisterModel.PhoneNumber" />
+            </div>
+        </div>
+        <div class="auth-field">
+            <label>Password</label>
+            <div class="auth-input-wrap">
+                <span class="oi oi-lock auth-input-icon"></span>
+                <InputText type="@(ShowPassword ? "text" : "password")" class="form-control auth-input" placeholder="Min 6 characters" @bind-Value="RegisterModel.Password" autocomplete="new-password" />
+                <button type="button" class="auth-input-toggle" @onclick="@(() => ShowPassword = !ShowPassword)" aria-label="Toggle password">
+                    <span class="oi @(ShowPassword ? "oi-eye-open" : "oi-eye")"></span>
+                </button>
+            </div>
+        </div>
+        <div class="auth-field">
+            <label>Confirm Password</label>
+            <div class="auth-input-wrap">
+                <span class="oi oi-lock auth-input-icon"></span>
+                <InputText type="@(ShowPassword ? "text" : "password")" class="form-control auth-input" placeholder="Re-enter password" @bind-Value="RegisterModel.ConfirmPassword" autocomplete="new-password" />
+            </div>
+        </div>
+        <button type="submit" class="btn-primary-lg w-100" disabled="@Loading">
+            @if (Loading) { <span class="spinner"></span> <span class="ms-2">Creating account...</span> } else { <span>Create Account</span> <span class="oi oi-arrow-right" style="font-size:0.85rem;margin-left:0.4rem"></span> }
+        </button>
+    </EditForm>
+    <div class="auth-divider"><span>or</span></div>
+    <a href="/login" class="auth-secondary-btn">Sign in to existing account</a>
+</div>
+
+@code {
+    private RegisterFormData RegisterModel = new();
+    private string? ErrorMessage;
+    private bool Loading;
+    private bool ShowPassword;
+
+    private async Task DoRegister()
+    {
+        if (RegisterModel.Password != RegisterModel.ConfirmPassword)
+        {
+            ErrorMessage = "Passwords do not match.";
+            return;
+        }
+        Loading = true; ErrorMessage = null;
+        try
+        {
+            var (success, error) = await Auth.RegisterAsync(RegisterModel.Email, RegisterModel.Password, RegisterModel.FirstName, RegisterModel.LastName, RegisterModel.PhoneNumber);
+            if (success)
+            {
+                AuthStateProvider.NotifyChanged();
+                Nav.NavigateTo("/dashboard");
+            }
+            else { ErrorMessage = error ?? "Registration failed."; }
+        }
+        catch (Exception ex) { ErrorMessage = $"Registration failed: {ex.Message}"; }
+        finally { Loading = false; }
+    }
+
+    private sealed class RegisterFormData
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "First name is required")]
+        public string FirstName { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Last name is required")]
+        public string LastName { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Email is required")]
+        [System.ComponentModel.DataAnnotations.EmailAddress(ErrorMessage = "Invalid email format")]
+        public string Email { get; set; } = "";
+
+        public string? PhoneNumber { get; set; }
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Password is required")]
+        [System.ComponentModel.DataAnnotations.MinLength(6, ErrorMessage = "Password must be at least 6 characters")]
+        public string Password { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Please confirm your password")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}

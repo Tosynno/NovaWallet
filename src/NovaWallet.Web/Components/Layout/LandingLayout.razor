@@ -1,0 +1,42 @@
+@inherits LayoutComponentBase
+
+<div class="landing-page">
+    <nav class="landing-nav">
+        <div class="landing-nav-inner">
+            <a href="/" class="landing-brand">
+                <div class="landing-brand-logo">N</div>
+                <span>Nova<span class="text-accent">Wallet</span></span>
+            </a>
+            <div class="landing-nav-links">
+                <a href="#features">Features</a>
+                <a href="#how-it-works">How It Works</a>
+                <a href="#security">Security</a>
+            </div>
+            <div class="landing-nav-actions">
+                <a href="/login" class="btn-ghost">Sign In</a>
+                <a href="/register" class="btn-primary-sm">Get Started</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="landing-content">
+        @Body
+    </main>
+
+    <footer class="landing-footer">
+        <div class="landing-footer-inner">
+            <div class="landing-footer-brand">
+                <div class="landing-brand-logo" style="width:32px;height:32px;font-size:0.85rem">N</div>
+                <span style="font-weight:700;color:#fff;font-size:1.1rem">NovaWallet</span>
+            </div>
+            <p class="landing-footer-desc">Simplified wallet ledger for the Nigerian fintech ecosystem. Send, receive, and manage money with confidence.</p>
+            <div class="landing-footer-links">
+                <a href="/login">Sign In</a>
+                <a href="/register">Create Account</a>
+                <a href="#features">Features</a>
+                <a href="#security">Security</a>
+            </div>
+            <p class="landing-footer-copy">&copy; 2026 NovaWallet. All rights reserved.</p>
+        </div>
+    </footer>
+</div>

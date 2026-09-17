@@ -5,42 +5,118 @@
 
 <PageTitle>Transfer - NovaWallet</PageTitle>
 
-<div class="container-fluid" style="max-width:680px">
-    <h2>New Transfer</h2>
-    <hr />
-    <ul class="nav nav-tabs mb-3">
-        <li class="nav-item"><button class="nav-link @(Tab == "internal" ? "active" : "")" @onclick='() => Tab = "internal"'>Internal (N2N)</button></li>
-        <li class="nav-item"><button class="nav-link @(Tab == "outbound" ? "active" : "")" @onclick='() => Tab = "outbound"'>Outbound (Other Bank)</button></li>
-    </ul>
+<div class="wallet-page" style="max-width:680px">
+    <div class="wallet-page-header">
+        <h2>Send Money</h2>
+        <p>Transfer to NovaWallet accounts or any Nigerian bank</p>
+    </div>
 
-    @if (ErrorMessage is not null) { <div class="alert alert-danger">@ErrorMessage</div> }
-    @if (SuccessMessage is not null) { <div class="alert alert-success">@SuccessMessage</div> }
+    <div class="wallet-transfer-tabs">
+        <button class="wallet-tab @(Tab == "internal" ? "active" : "")" @onclick='() => Tab = "internal"'>
+            <span class="oi oi-transfer"></span> To NovaWallet
+        </button>
+        <button class="wallet-tab @(Tab == "outbound" ? "active" : "")" @onclick='() => Tab = "outbound"'>
+            <span class="oi oi-share"></span> To Other Bank
+        </button>
+    </div>
+
+    @if (ErrorMessage is not null)
+    {
+        <div class="auth-alert-error mb-3">
+            <span class="oi oi-warning" style="font-size:0.9rem"></span>
+            <span>@ErrorMessage</span>
+        </div>
+    }
+    @if (SuccessMessage is not null)
+    {
+        <div class="wallet-success-banner mb-3">
+            <span class="oi oi-check-circle" style="font-size:1.1rem"></span>
+            <div>
+                <strong>Transfer Successful</strong>
+                <p>@SuccessMessage</p>
+            </div>
+        </div>
+    }
 
     @if (Tab == "internal")
     {
-        <div class="card"><div class="card-body">
-            <div class="mb-3"><label class="form-label">Source Wallet ID</label><input class="form-control monospace" placeholder="00000000-0000-0000-0000-000000000000" @bind="InternalModel.SourceWalletId" /></div>
-            <div class="mb-3"><label class="form-label">Destination Account Number</label><input class="form-control" placeholder="9000000001" @bind="InternalModel.DestinationAccountNumber" /></div>
-            <div class="mb-3"><label class="form-label">Amount (kobo)</label><input type="number" class="form-control" placeholder="100000" @bind="InternalModel.AmountKobo" /></div>
-            <div class="mb-3"><label class="form-label">Idempotency Key</label><input class="form-control monospace" @bind="IdempotencyKey" /></div>
-            <button class="btn btn-primary w-100" style="padding:0.7rem" disabled="@Loading" @onclick="DoInternal">
+        <div class="wallet-form-card">
+            <div class="wallet-field">
+                <label>Source Wallet ID</label>
+                <div class="auth-input-wrap">
+                    <span class="oi oi-wallet auth-input-icon"></span>
+                    <input class="wallet-input auth-input" placeholder="00000000-0000-0000-0000-000000000000" @bind="InternalModel.SourceWalletId" />
+                </div>
+            </div>
+            <div class="wallet-field">
+                <label>Destination Account Number</label>
+                <div class="auth-input-wrap">
+                    <span class="oi oi-person auth-input-icon"></span>
+                    <input class="wallet-input auth-input" placeholder="9000000001" @bind="InternalModel.DestinationAccountNumber" />
+                </div>
+                <p class="wallet-field-hint">Enter the 10-digit NovaWallet account number of the recipient</p>
+            </div>
+            <div class="wallet-field">
+                <label>Amount</label>
+                <div class="wallet-amount-input">
+                    <span class="wallet-currency">N</span>
+                    <input type="number" class="wallet-input" placeholder="0.00" @bind="InternalModel.AmountKobo" />
+                </div>
+                <p class="wallet-field-hint">Internal transfers are free — no fees applied</p>
+            </div>
+            <button class="btn-primary-lg w-100" disabled="@Loading" @onclick="DoInternal">
                 @if (Loading) { <span class="spinner"></span> <span class="ms-2">Processing...</span> } else { <span class="oi oi-transfer me-2"></span><span>Send Transfer</span> }
             </button>
-        </div></div>
+        </div>
     }
     else
     {
-        <div class="card"><div class="card-body">
-            <div class="mb-3"><label class="form-label">Source Wallet ID</label><input class="form-control monospace" placeholder="00000000-0000-0000-0000-000000000000" @bind="OutboundModel.SourceWalletId" /></div>
-            <div class="mb-3"><label class="form-label">Destination Account Number</label><input class="form-control" placeholder="0123456789" @bind="OutboundModel.DestinationAccountNumber" /></div>
-            <div class="mb-3"><label class="form-label">Destination Bank Code</label><input class="form-control" placeholder="058" @bind="OutboundModel.DestinationBankCode" /></div>
-            <div class="mb-3"><label class="form-label">Destination Account Name</label><input class="form-control" placeholder="Jane Doe" @bind="OutboundModel.DestinationAccountName" /></div>
-            <div class="mb-3"><label class="form-label">Amount (kobo)</label><input type="number" class="form-control" placeholder="100000" @bind="OutboundModel.AmountKobo" /></div>
-            <div class="mb-3"><label class="form-label">Idempotency Key</label><input class="form-control monospace" @bind="IdempotencyKey" /></div>
-            <button class="btn btn-primary w-100" style="padding:0.7rem" disabled="@Loading" @onclick="DoOutbound">
-                @if (Loading) { <span class="spinner"></span> <span class="ms-2">Processing...</span> } else { <span class="oi oi-share me-2"></span><span>Send Outbound</span> }
+        <div class="wallet-form-card">
+            <div class="wallet-field">
+                <label>Source Wallet ID</label>
+                <div class="auth-input-wrap">
+                    <span class="oi oi-wallet auth-input-icon"></span>
+                    <input class="wallet-input auth-input" placeholder="00000000-0000-0000-0000-000000000000" @bind="OutboundModel.SourceWalletId" />
+                </div>
+            </div>
+            <div class="wallet-field-row">
+                <div class="wallet-field">
+                    <label>Account Number</label>
+                    <div class="auth-input-wrap">
+                        <span class="oi oi-person auth-input-icon"></span>
+                        <input class="wallet-input auth-input" placeholder="0123456789" @bind="OutboundModel.DestinationAccountNumber" />
+                    </div>
+                </div>
+                <div class="wallet-field">
+                    <label>Bank Code</label>
+                    <div class="auth-input-wrap">
+                        <span class="oi oi-bank auth-input-icon"></span>
+                        <input class="wallet-input auth-input" placeholder="058" @bind="OutboundModel.DestinationBankCode" />
+                    </div>
+                </div>
+            </div>
+            <div class="wallet-field">
+                <label>Account Name</label>
+                <div class="auth-input-wrap">
+                    <span class="oi oi-person auth-input-icon"></span>
+                    <input class="wallet-input auth-input" placeholder="Jane Doe" @bind="OutboundModel.DestinationAccountName" />
+                </div>
+            </div>
+            <div class="wallet-field">
+                <label>Amount</label>
+                <div class="wallet-amount-input">
+                    <span class="wallet-currency">N</span>
+                    <input type="number" class="wallet-input" placeholder="0.00" @bind="OutboundModel.AmountKobo" />
+                </div>
+                <div class="wallet-fee-hint">
+                    <span class="oi oi-info"></span>
+                    <p>A transfer fee of N 500.00 and 7.5% VAT applies to outbound transfers</p>
+                </div>
+            </div>
+            <button class="btn-primary-lg w-100" disabled="@Loading" @onclick="DoOutbound">
+                @if (Loading) { <span class="spinner"></span> <span class="ms-2">Processing...</span> } else { <span class="oi oi-share me-2"></span><span>Send to Bank</span> }
             </button>
-        </div></div>
+        </div>
     }
 </div>
 
@@ -59,8 +135,8 @@
         {
             var req = new { SourceWalletId = InternalModel.SourceWalletId, DestinationAccountNumber = InternalModel.DestinationAccountNumber, AmountKobo = InternalModel.AmountKobo };
             var result = await Api.PostAsync<TransferResponse>("/api/v1/transfers/internal", req);
-            if (result is not null) { SuccessMessage = $"Transfer successful. Ref: {result.Reference}"; IdempotencyKey = Guid.NewGuid().ToString("N"); }
-            else ErrorMessage = "Transfer failed. Check your inputs.";
+            if (result is not null) { SuccessMessage = $"Reference: {result.Reference}"; IdempotencyKey = Guid.NewGuid().ToString("N"); }
+            else ErrorMessage = "Transfer failed. Please check your inputs and try again.";
         }
         catch (Exception ex) { ErrorMessage = ex.Message; }
         finally { Loading = false; }
@@ -73,8 +149,8 @@
         {
             var req = new { SourceWalletId = OutboundModel.SourceWalletId, DestinationAccountNumber = OutboundModel.DestinationAccountNumber, DestinationBankCode = OutboundModel.DestinationBankCode, DestinationAccountName = OutboundModel.DestinationAccountName, AmountKobo = OutboundModel.AmountKobo };
             var result = await Api.PostAsync<TransferResponse>("/api/v1/transfers/outbound", req);
-            if (result is not null) { SuccessMessage = $"Outbound submitted. Ref: {result.Reference}"; IdempotencyKey = Guid.NewGuid().ToString("N"); }
-            else ErrorMessage = "Transfer failed. Check your inputs.";
+            if (result is not null) { SuccessMessage = $"Reference: {result.Reference}"; IdempotencyKey = Guid.NewGuid().ToString("N"); }
+            else ErrorMessage = "Transfer failed. Please check your inputs and try again.";
         }
         catch (Exception ex) { ErrorMessage = ex.Message; }
         finally { Loading = false; }

@@ -1,19 +1,148 @@
 ﻿@page "/"
+@layout NovaWallet.Web.Components.Layout.LandingLayout
 @using NovaWallet.Web.Services
 @inject NavigationManager Nav
 @inject AuthService Auth
 
-<PageTitle>NovaWallet</PageTitle>
+<PageTitle>NovaWallet - Wallet Banking, Reimagined</PageTitle>
 
-<div class="container text-center mt-5">
-    <h1>NovaWallet</h1>
-    <p class="lead">Simplified wallet ledger for the Nigerian fintech ecosystem.</p>
-    <a href="/login" class="btn btn-primary btn-lg mt-3">Get Started</a>
-</div>
+<section class="landing-hero">
+    <div class="landing-hero-inner">
+        <div class="landing-hero-badge"><span class="oi oi-shield" style="font-size:0.75rem;margin-right:0.3rem"></span> Bank-grade security for your money</div>
+        <h1>Wallet banking,<br /><span class="text-accent">reimagined.</span></h1>
+        <p class="landing-hero-text">Send and receive money instantly. Pay bills, transfer to any Nigerian bank, and manage your finances — all from one beautiful wallet.</p>
+        <div class="landing-hero-cta">
+            <a href="/register" class="btn-primary-lg">Open Free Account <span class="oi oi-arrow-right" style="font-size:0.85rem;margin-left:0.4rem"></span></a>
+            <a href="/login" class="btn-outline-lg">Sign In</a>
+        </div>
+        <div class="landing-hero-stats">
+            <div><strong>NGN 50M+</strong><span>Transferred</span></div>
+            <div class="hero-stat-divider"></div>
+            <div><strong>10,000+</strong><span>Active users</span></div>
+            <div class="hero-stat-divider"></div>
+            <div><strong>0%</strong><span>Hidden fees</span></div>
+        </div>
+    </div>
+    <div class="landing-hero-card">
+        <div class="hero-card-balance">
+            <div class="hero-card-top">
+                <div>
+                    <p>Wallet Balance</p>
+                    <h3>N 248,500.00</h3>
+                </div>
+                <div class="hero-card-chip"><span class="oi oi-shield"></span></div>
+            </div>
+            <p class="hero-card-number">0123456789</p>
+        </div>
+        <div class="hero-card-actions">
+            <div class="hero-card-action"><div class="hero-action-icon"><span class="oi oi-transfer"></span></div><p>Transfer</p></div>
+            <div class="hero-card-action"><div class="hero-action-icon"><span class="oi oi-plus"></span></div><p>Fund</p></div>
+            <div class="hero-card-action"><div class="hero-action-icon"><span class="oi oi-list"></span></div><p>History</p></div>
+            <div class="hero-card-action"><div class="hero-action-icon"><span class="oi oi-share"></span></div><p>Send</p></div>
+        </div>
+    </div>
+</section>
+
+<section id="features" class="landing-section">
+    <div class="landing-section-inner">
+        <div class="section-header">
+            <span class="section-tag">Features</span>
+            <h2>Everything you need in one wallet</h2>
+            <p>Built for the Nigerian fintech ecosystem with features that matter.</p>
+        </div>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="feature-icon icon-blue"><span class="oi oi-transfer"></span></div>
+                <h3>Instant Transfers</h3>
+                <p>Send money to any Nigerian bank account in seconds via NIP. Internal transfers between NovaWallet users are completely free.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon icon-green"><span class="oi oi-shield"></span></div>
+                <h3>Bank-Grade Security</h3>
+                <p>AES-256 encryption, JWT authentication, and real-time fraud monitoring on every single transaction.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon icon-orange"><span class="oi oi-graph"></span></div>
+                <h3>Transparent Fees</h3>
+                <p>Know exactly what you pay. No hidden charges, no surprises. VAT inclusive on every transfer.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon icon-purple"><span class="oi oi-timer"></span></div>
+                <h3>Settlement Monitoring</h3>
+                <p>Real-time tracking of every transaction with automatic settlement and daily reconciliation.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon icon-teal"><span class="oi oi-document"></span></div>
+                <h3>Daily Limits</h3>
+                <p>Per-wallet daily outbound limits keep your money safe with configurable thresholds.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon icon-red"><span class="oi oi-eye"></span></div>
+                <h3>Transaction History</h3>
+                <p>Full ledger with double-entry bookkeeping. Every kobo tracked, auditable, and reconciled.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="how-it-works" class="landing-section landing-section-alt">
+    <div class="landing-section-inner">
+        <div class="section-header">
+            <span class="section-tag">How It Works</span>
+            <h2>Get started in 3 simple steps</h2>
+            <p>No paperwork. No waiting. Just sign up and start transacting.</p>
+        </div>
+        <div class="steps-grid">
+            <div class="step-card">
+                <div class="step-number">1</div>
+                <h3>Create Your Account</h3>
+                <p>Sign up with your email and phone number. Get a wallet account number instantly — no BVN required to start.</p>
+            </div>
+            <div class="step-card">
+                <div class="step-number">2</div>
+                <h3>Fund Your Wallet</h3>
+                <p>Receive money from any Nigerian bank or transfer from another NovaWallet user — no charges on incoming.</p>
+            </div>
+            <div class="step-card">
+                <div class="step-number">3</div>
+                <h3>Send & Spend</h3>
+                <p>Transfer to any Nigerian bank via NIP. Track every transaction in real-time with full audit trail.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="security" class="landing-section">
+    <div class="landing-section-inner">
+        <div class="section-header">
+            <span class="section-tag">Security</span>
+            <h2>Your money is safe with us</h2>
+            <p>We take security seriously. Every layer is designed to protect your funds.</p>
+        </div>
+        <div class="security-grid">
+            <div class="security-item"><span class="oi oi-lock security-icon"></span><div><h4>AES-256 Encryption</h4><p>All API payloads encrypted end-to-end between your device and our servers using military-grade encryption.</p></div></div>
+            <div class="security-item"><span class="oi oi-key security-icon"></span><div><h4>JWT Authentication</h4><p>Tokens expire automatically. No long-lived credentials stored on your device. Re-authenticate on every session.</p></div></div>
+            <div class="security-item"><span class="oi oi-shield security-icon"></span><div><h4>Double-Entry Ledger</h4><p>Every transaction recorded twice — debit and credit. Reconciliation ensures balances always match.</p></div></div>
+            <div class="security-item"><span class="oi oi-eye security-icon"></span><div><h4>Immutable Audit Trail</h4><p>Every wallet action logged with timestamp and actor. Full traceability for compliance and dispute resolution.</p></div></div>
+        </div>
+    </div>
+</section>
+
+<section class="landing-cta">
+    <div class="landing-cta-inner">
+        <div class="landing-cta-icon"><span class="oi oi-wallet"></span></div>
+        <h2>Ready to take control of your money?</h2>
+        <p>Join NovaWallet today. It takes less than 2 minutes to create your account and get your wallet number.</p>
+        <div class="landing-cta-buttons">
+            <a href="/register" class="btn-primary-lg">Open Free Account</a>
+            <a href="/login" class="btn-outline-lg">Sign In</a>
+        </div>
+    </div>
+</section>
 
 @code {
     protected override void OnInitialized()
     {
-        Nav.NavigateTo(Auth.IsAuthenticated ? "/dashboard" : "/login");
+        if (Auth.IsAuthenticated) Nav.NavigateTo("/dashboard");
     }
 }
