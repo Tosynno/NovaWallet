@@ -12,22 +12,22 @@
         <div class="wallet-balance-top">
             <div>
                 <p class="wallet-balance-label">Available Balance</p>
-                @if (LoadingBalance)
+                @if (LoadingWallets)
                 {
                     <h1 class="wallet-balance-amount"><span class="spinner" style="border-color:rgba(255,255,255,0.3);border-top-color:#fff"></span></h1>
                     <p class="wallet-account-number">Loading...</p>
                 }
-                else if (Balance is not null)
+                else if (SelectedWallet is not null)
                 {
-                    <h1 class="wallet-balance-amount">@((Balance.BalanceKobo / 100m).ToString("N2"))</h1>
+                    <h1 class="wallet-balance-amount">@((SelectedWallet.BalanceKobo / 100m).ToString("N2"))</h1>
                     <p class="wallet-account-number">
-                        <span class="oi oi-check-circle"></span> @Balance.AccountNumber
+                        <span class="oi oi-check-circle"></span> @SelectedWallet.AccountNumber
                     </p>
                 }
                 else
                 {
                     <h1 class="wallet-balance-amount">0.00</h1>
-                    <p class="wallet-account-number">Enter your Wallet ID below to view balance</p>
+                    <p class="wallet-account-number">No wallet found</p>
                 }
             </div>
             <div class="wallet-balance-badge">
@@ -39,52 +39,81 @@
                 <div class="wallet-quick-icon"><span class="oi oi-transfer"></span></div>
                 <p>Transfer</p>
             </a>
-            <a href="/transfer" class="wallet-quick-action">
-                <div class="wallet-quick-icon"><span class="oi oi-share"></span></div>
-                <p>Send</p>
+            <a href="/create-account" class="wallet-quick-action">
+                <div class="wallet-quick-icon"><span class="oi oi-plus"></span></div>
+                <p>New Account</p>
             </a>
             <a href="/statement" class="wallet-quick-action">
                 <div class="wallet-quick-icon"><span class="oi oi-list"></span></div>
                 <p>History</p>
             </a>
-            <button class="wallet-quick-action" @onclick="LoadBalance">
+            <button class="wallet-quick-action" @onclick="LoadWallets">
                 <div class="wallet-quick-icon"><span class="oi oi-reload"></span></div>
                 <p>Refresh</p>
             </button>
         </div>
     </div>
 
-    <div class="wallet-find-wallet">
-        <p class="wallet-section-label"><span class="oi oi-wallet" style="font-size:0.8rem;margin-right:0.3rem"></span> Check Wallet Balance</p>
-        <div class="wallet-input-row">
-            <input class="wallet-input" placeholder="Enter your Wallet ID (e.g. 00000000-0000-...)" @bind="WalletIdInput" />
-            <button class="btn-primary-sm" disabled="@LoadingBalance" @onclick="LoadBalance">
-                @if (LoadingBalance) { <span class="spinner" style="border-color:rgba(0,168,107,0.3);border-top-color:var(--nw-accent)"></span> }
-                else { <span class="oi oi-check me-1"></span> }
-                @(LoadingBalance ? "" : "Check")
-            </button>
+    @if (ErrorMessage is not null)
+    {
+        <div class="auth-alert-error mb-3">
+            <span class="oi oi-warning" style="font-size:0.9rem"></span>
+            <span>@ErrorMessage</span>
         </div>
-        @if (LoadError is not null)
-        {
-            <p class="wallet-error"><span class="oi oi-warning" style="font-size:0.8rem"></span> @LoadError</p>
-        }
-    </div>
+    }
+
+    @if (Wallets is not null && Wallets.Count > 0)
+    {
+        <div class="wallet-section">
+            <div class="wallet-section-header">
+                <h3>Your Account(s)</h3>
+                <p>Select an account to view balance or make transfers</p>
+            </div>
+            <div class="wallet-list">
+                @foreach (var wallet in Wallets)
+                {
+                    <div class="wallet-list-item @(SelectedWallet?.Id == wallet.Id ? "selected" : "")" @onclick="() => SelectWallet(wallet)">
+                        <div class="wallet-list-icon">
+                            <span class="oi oi-wallet"></span>
+                        </div>
+                        <div class="wallet-list-info">
+                            <p class="wallet-list-number">@wallet.AccountNumber</p>
+                            <p class="wallet-list-name">@(string.IsNullOrWhiteSpace(wallet.AccountName) ? "Primary Account" : wallet.AccountName)</p>
+                            <p class="wallet-list-balance">@wallet.Currency @((wallet.BalanceKobo / 100m).ToString("N2"))</p>
+                        </div>
+                        @if (SelectedWallet?.Id == wallet.Id)
+                        {
+                            <div class="wallet-list-check"><span class="oi oi-check"></span></div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else if (!LoadingWallets && Wallets is not null)
+    {
+        <div class="wallet-empty">
+            <div class="wallet-empty-icon"><span class="oi oi-wallet"></span></div>
+            <p>No account found</p>
+            <span>Your wallet was created when you registered. If you don't see it, try refreshing.</span>
+            <button class="btn-primary-sm mt-3" @onclick="LoadWallets"><span class="oi oi-reload me-1"></span> Refresh</button>
+        </div>
+    }
 
     <div class="wallet-section">
         <div class="wallet-section-header">
             <h3>Quick Actions</h3>
-            <p>Get started with common tasks</p>
         </div>
         <div class="wallet-action-grid">
             <a href="/transfer" class="wallet-action-card wallet-action-blue">
                 <div class="wallet-action-icon"><span class="oi oi-transfer"></span></div>
-                <p>New Transfer</p>
+                <p>Transfer</p>
                 <span>Send to NovaWallet</span>
             </a>
-            <a href="/transfer" class="wallet-action-card wallet-action-green">
-                <div class="wallet-action-icon"><span class="oi oi-plus"></span></div>
-                <p>Fund Wallet</p>
-                <span>Receive money</span>
+            <a href="/kyc" class="wallet-action-card wallet-action-green">
+                <div class="wallet-action-icon"><span class="oi oi-shield"></span></div>
+                <p>KYC</p>
+                <span>Increase limits</span>
             </a>
             <a href="/statement" class="wallet-action-card wallet-action-orange">
                 <div class="wallet-action-icon"><span class="oi oi-list"></span></div>
@@ -101,37 +130,32 @@
 
     <div class="wallet-hint-card">
         <span class="oi oi-info wallet-hint-icon"></span>
-        <p>Your wallet ID was sent to your email when you registered. You can also find it in your transaction history.</p>
+        <p>Your account number was created automatically when you registered. All NovaWallet account numbers start with 50.</p>
     </div>
 </div>
 
 @code {
-    private string WalletIdInput = "";
-    private BalanceResponse? Balance;
-    private bool LoadingBalance;
-    private string? LoadError;
+    private List<WalletItem>? Wallets;
+    private WalletItem? SelectedWallet;
+    private bool LoadingWallets;
+    private string? ErrorMessage;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync() => await LoadWallets();
+
+    private async Task LoadWallets()
     {
-        if (!string.IsNullOrWhiteSpace(Auth.WalletId))
+        LoadingWallets = true; ErrorMessage = null;
+        try
         {
-            WalletIdInput = Auth.WalletId;
-            await LoadBalance();
+            Wallets = await Api.GetAsync<List<WalletItem>>("/api/v1/wallets");
+            if (Wallets is not null && Wallets.Count > 0)
+                SelectWallet(Wallets[0]);
         }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { LoadingWallets = false; }
     }
 
-    private async Task LoadBalance()
-    {
-        if (!Guid.TryParse(WalletIdInput, out var id))
-        {
-            LoadError = "Invalid Wallet ID. Please enter a valid GUID.";
-            return;
-        }
-        LoadingBalance = true; LoadError = null;
-        try { Balance = await Api.GetAsync<BalanceResponse>($"/api/v1/wallets/{id}/balance"); }
-        catch (Exception ex) { LoadError = ex.Message; }
-        finally { LoadingBalance = false; }
-    }
+    private void SelectWallet(WalletItem wallet) => SelectedWallet = wallet;
 
-    public sealed class BalanceResponse { public string AccountNumber { get; set; } = ""; public string Currency { get; set; } = ""; public long BalanceKobo { get; set; } }
+    public sealed class WalletItem { public Guid Id { get; set; } public string AccountNumber { get; set; } = ""; public string Currency { get; set; } = ""; public string AccountName { get; set; } = ""; public long BalanceKobo { get; set; } }
 }

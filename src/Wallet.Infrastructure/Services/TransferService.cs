@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using NovaWallet.Application;
 using NovaWallet.Application.Repositories;
 using NovaWallet.Domain;
@@ -18,13 +19,14 @@ public sealed class TransferService(
     IDailyOutboundCounterRepository dailyCounters,
     IClock clock,
     FeePolicy fees,
-    IPaymentRail rail) : ITransferService
+    IPaymentRail rail,
+    AppDbContext db) : ITransferService
 {
     public async Task<TransferResult> TransferInternalAsync(InternalTransferCommand command, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey)) throw new DomainException("idempotency.required", "Idempotency-Key is required.");
         if (command.AmountKobo <= 0) throw new DomainException("amount.invalid", "Amount must be greater than zero.");
-        if (command.AmountKobo > DailyOutboundLimitPolicy.LimitKobo) throw new DomainException("amount.too_large", "Single transfer exceeds the daily limit.");
+        if (command.AmountKobo > DailyOutboundLimitPolicy.VerifiedLimitKobo) throw new DomainException("amount.too_large", "Single transfer exceeds the daily limit.");
 
         var hash = IdempotencyFingerprint.Compute(command);
         await using var tx = await uow.BeginTransactionAsync(ct);
@@ -89,6 +91,10 @@ public sealed class TransferService(
         var totalDebit = checked(command.AmountKobo + feeKobo + vatKobo);
         var hash = IdempotencyFingerprint.Compute(command);
 
+        var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.CustomerId == command.CustomerId, ct);
+        var kycVerified = user?.KycStatus == KycStatus.Verified;
+        var dailyLimit = DailyOutboundLimitPolicy.LimitFor(kycVerified);
+
         await using var tx = await uow.BeginTransactionAsync(ct);
         try
         {
@@ -96,8 +102,9 @@ public sealed class TransferService(
             if (replay is not null) { await tx.CommitAsync(ct); return replay; }
 
             var affected = await dailyCounters.MergeCounterAsync(command.SourceWalletId, WatBusinessDay.Today(clock.UtcNow),
-                command.AmountKobo, DailyOutboundLimitPolicy.LimitKobo, clock.UtcNow, ct);
-            if (affected == 0) throw new DomainException("limit.daily_exceeded", "Daily outbound transfer limit exceeded.");
+                command.AmountKobo, dailyLimit, clock.UtcNow, ct);
+            if (affected == 0) throw new DomainException("limit.daily_exceeded",
+                kycVerified ? "Daily outbound transfer limit exceeded." : "Daily limit for unverified accounts is N 50,000. Complete KYC to increase your limit.");
 
             var source = await wallets.GetByIdForUpdateAsync(command.SourceWalletId, ct)
                 ?? throw new DomainException("wallet.source_not_found", "Source wallet not found.");

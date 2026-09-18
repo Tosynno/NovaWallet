@@ -56,4 +56,11 @@ public sealed class KycService(AppDbContext db) : IKycService
         await db.SaveChangesAsync(ct);
         return new KycReviewResult(doc.Id, doc.Status, user.KycStatus, doc.ReviewNotes);
     }
+
+    public async Task<KycStatusResult?> GetByCustomerAsync(string customerId, CancellationToken ct)
+    {
+        var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.CustomerId == customerId, ct);
+        if (user is null) return null;
+        return new KycStatusResult(user.Id, user.CustomerId, user.KycStatus, user.FirstName, user.LastName, user.Email);
+    }
 }

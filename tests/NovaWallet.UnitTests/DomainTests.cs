@@ -19,7 +19,7 @@ public sealed class MoneyTests
 
 public sealed class WalletTests
 {
-    private static Wallet NewWallet() => Wallet.CreateCustomer("customer-1", "9000000001", DateTimeOffset.UtcNow);
+    private static Wallet NewWallet() => Wallet.CreateCustomer("customer-1", "5000000001", DateTimeOffset.UtcNow);
 
     [Fact]
     public void Credit_increases_balance_in_kobo()
@@ -53,7 +53,7 @@ public sealed class TransferTests
     public void Internal_rejects_same_wallet()
     {
         var id = Guid.NewGuid();
-        var ex = Assert.Throws<DomainException>(() => Transfer.CreateInternal("c", id, id, "9000000001", Money.Create(100), "key", "hash", "REF", "corr", DateTimeOffset.UtcNow));
+        var ex = Assert.Throws<DomainException>(() => Transfer.CreateInternal("c", id, id, "5000000001", Money.Create(100), "key", "hash", "REF", "corr", DateTimeOffset.UtcNow));
         Assert.Equal("transfer.same_wallet", ex.Code);
     }
 
@@ -72,7 +72,7 @@ public sealed class FingerprintTests
     public void Internal_fingerprint_changes_when_payload_changes()
     {
         var source = Guid.NewGuid();
-        var a = new InternalTransferCommand("c", source, "9000000001", 10_000, "key", "corr");
+        var a = new InternalTransferCommand("c", source, "5000000001", 10_000, "key", "corr");
         var b = a with { AmountKobo = 10_001 };
         Assert.NotEqual(IdempotencyFingerprint.Compute(a), IdempotencyFingerprint.Compute(b));
         Assert.Equal(IdempotencyFingerprint.Compute(a), IdempotencyFingerprint.Compute(a));
@@ -105,9 +105,17 @@ public sealed class LimitPolicyTests
     [Fact]
     public void Daily_limit_rejects_amount_that_crosses_500k()
     {
-        Assert.True(DailyOutboundLimitPolicy.IsAllowed(49_900_000, 100_000));
-        Assert.False(DailyOutboundLimitPolicy.IsAllowed(49_900_000, 100_001));
-        Assert.False(DailyOutboundLimitPolicy.IsAllowed(50_000_000, 1));
+        Assert.True(DailyOutboundLimitPolicy.IsAllowed(49_900_000, 100_000, DailyOutboundLimitPolicy.VerifiedLimitKobo));
+        Assert.False(DailyOutboundLimitPolicy.IsAllowed(49_900_000, 100_001, DailyOutboundLimitPolicy.VerifiedLimitKobo));
+        Assert.False(DailyOutboundLimitPolicy.IsAllowed(50_000_000, 1, DailyOutboundLimitPolicy.VerifiedLimitKobo));
+    }
+
+    [Fact]
+    public void Unverified_limit_rejects_amount_that_crosses_50k()
+    {
+        Assert.True(DailyOutboundLimitPolicy.IsAllowed(4_900_000, 100_000, DailyOutboundLimitPolicy.UnverifiedLimitKobo));
+        Assert.False(DailyOutboundLimitPolicy.IsAllowed(4_900_000, 100_001, DailyOutboundLimitPolicy.UnverifiedLimitKobo));
+        Assert.False(DailyOutboundLimitPolicy.IsAllowed(5_000_000, 1, DailyOutboundLimitPolicy.UnverifiedLimitKobo));
     }
 }
 
@@ -126,13 +134,13 @@ public sealed class FeePolicyTests
 public sealed class AccountNumberTests
 {
     [Fact]
-    public void Generated_account_number_is_10_digits_and_starts_with_90()
+    public void Generated_account_number_is_10_digits_and_starts_with_50()
     {
         for (var i = 0; i < 100; i++)
         {
             var n = AccountNumberGenerator.Generate();
             Assert.Equal(10, n.Length);
-            Assert.StartsWith("90", n);
+            Assert.StartsWith("50", n);
             Assert.All(n, c => Assert.True(char.IsDigit(c)));
         }
     }

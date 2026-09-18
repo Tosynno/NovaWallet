@@ -14,6 +14,7 @@
             <a class="wallet-nav-link @(CurrentPage == "dashboard" ? "active" : "")" href="/dashboard"><span class="oi oi-home"></span> Home</a>
             <a class="wallet-nav-link @(CurrentPage == "transfer" ? "active" : "")" href="/transfer"><span class="oi oi-transfer"></span> Transfer</a>
             <a class="wallet-nav-link @(CurrentPage == "statement" ? "active" : "")" href="/statement"><span class="oi oi-list"></span> History</a>
+            <a class="wallet-nav-link @(CurrentPage == "kyc" ? "active" : "")" href="/kyc"><span class="oi oi-shield"></span> KYC</a>
         </nav>
         <div class="wallet-sidebar-footer">
             @if (Auth.IsAuthenticated)

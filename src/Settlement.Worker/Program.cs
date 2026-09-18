@@ -132,7 +132,7 @@ public sealed class SettlementBackgroundService(IServiceScopeFactory scopeFactor
                 {
                     transfer.MarkSettled(now);
                     var job = await db.SettlementJobs.SingleOrDefaultAsync(x => x.TransferId == transfer.Id, ct);
-                    if (job is not null) job.Succeed(transfer.ExternalReference!, now);
+                    job?.Succeed(transfer.ExternalReference!, now);
                 }
                 else if (nipStatus.Status == PaymentRailStatus.Failed)
                 {

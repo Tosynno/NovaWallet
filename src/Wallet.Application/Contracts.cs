@@ -22,18 +22,20 @@ public sealed record InboundTransferCommand(
 
 public sealed record TransferResult(Guid TransferId, TransferType Type, TransferStatus Status, long AmountKobo, long FeeKobo, long VatKobo, long TotalDebitKobo, string Reference, string? ExternalReference);
 public sealed record StatementItem(Guid? TransferId, Guid WalletId, LedgerDirection Direction, long AmountKobo, string Leg, DateTimeOffset CreatedAt);
-public sealed record WalletCreatedResult(Guid Id, string AccountNumber, string CustomerId, string Currency, long BalanceKobo);
+public sealed record WalletCreatedResult(Guid Id, string AccountNumber, string CustomerId, string Currency, string AccountName, long BalanceKobo);
 public sealed record BalanceResult(string AccountNumber, string Currency, long BalanceKobo);
 public sealed record NameEnquiryResult(string AccountNumber, string AccountName, string BankCode, string BankName);
 
 public interface IWalletService
 {
-    Task<WalletCreatedResult> CreateAsync(string customerId, CancellationToken ct);
+    Task<WalletCreatedResult> CreateAsync(string customerId, string currency, string? accountName, CancellationToken ct);
     Task<BalanceResult?> GetAsync(Guid walletId, string customerId, CancellationToken ct);
     Task<BalanceResult> CreditAsync(Guid walletId, long amountKobo, string actor, string correlationId, CancellationToken ct);
     Task<IReadOnlyList<StatementItem>> StatementAsync(Guid walletId, int page, int pageSize, CancellationToken ct);
     Task<NameEnquiryResult?> NameEnquiryAsync(string accountNumber, CancellationToken ct);
+    Task<IReadOnlyList<WalletSummaryResult>> ListByCustomerAsync(string customerId, CancellationToken ct);
 }
+public sealed record WalletSummaryResult(Guid Id, string AccountNumber, string Currency, string AccountName, long BalanceKobo);
 public interface ITransferService
 {
     Task<TransferResult> TransferInternalAsync(InternalTransferCommand command, CancellationToken ct);
@@ -84,11 +86,13 @@ public interface IAuthService
     Task<ChannelTokenResult?> IssueChannelTokenAsync(string appKey, string appSecret, CancellationToken ct);
     Task<LoginResult?> LoginAsync(string email, string password, CancellationToken ct);
     Task<RegisterResult> RegisterAsync(string email, string password, string firstName, string lastName, string? phoneNumber, CancellationToken ct);
+    Task<RefreshTokenResult?> RefreshTokenAsync(string customerId, CancellationToken ct);
 }
 
 public sealed record ChannelTokenResult(string Token, int ExpiresInSeconds);
 public sealed record LoginResult(string Token, int ExpiresInSeconds, string CustomerId);
 public sealed record RegisterResult(bool Success, string? Error, string? Token, int ExpiresInSeconds, string? CustomerId, Guid? WalletId, string? AccountNumber);
+public sealed record RefreshTokenResult(string Token, int ExpiresInSeconds);
 
 public interface IChannelService
 {
@@ -119,7 +123,9 @@ public interface IKycService
     Task<IReadOnlyList<KycDocumentResult>> ListAsync(long userId, CancellationToken ct);
     Task<KycReviewResult?> ApproveAsync(long userId, long docId, CancellationToken ct);
     Task<KycReviewResult?> RejectAsync(long userId, long docId, string? notes, CancellationToken ct);
+    Task<KycStatusResult?> GetByCustomerAsync(string customerId, CancellationToken ct);
 }
+public sealed record KycStatusResult(long UserId, string CustomerId, KycStatus KycStatus, string FirstName, string LastName, string Email);
 
 public sealed record KycSubmittedResult(long Id, KycDocumentType DocumentType, string DocumentNumber, KycStatus Status);
 public sealed record KycDocumentResult(long Id, KycDocumentType DocumentType, string DocumentNumber, KycStatus Status, DateTimeOffset SubmittedAt, DateTimeOffset? ReviewedAt, string? ReviewNotes);
@@ -166,9 +172,11 @@ public static class IdempotencyFingerprint
 
 public static class DailyOutboundLimitPolicy
 {
-    public const long LimitKobo = 50_000_000;
-    public static bool IsAllowed(long alreadySentKobo, long requestedKobo) =>
-        alreadySentKobo >= 0 && requestedKobo > 0 && alreadySentKobo <= LimitKobo && requestedKobo <= LimitKobo - alreadySentKobo;
+    public const long VerifiedLimitKobo = 50_000_000;
+    public const long UnverifiedLimitKobo = 5_000_000;
+    public static long LimitFor(bool kycVerified) => kycVerified ? VerifiedLimitKobo : UnverifiedLimitKobo;
+    public static bool IsAllowed(long alreadySentKobo, long requestedKobo, long limitKobo) =>
+        alreadySentKobo >= 0 && requestedKobo > 0 && alreadySentKobo <= limitKobo && requestedKobo <= limitKobo - alreadySentKobo;
 }
 
 public sealed class FeePolicy
@@ -191,7 +199,7 @@ public sealed class FeePolicy
 
 public static class AccountNumberGenerator
 {
-    private const string NovaPrefix = "90";
+    private const string NovaPrefix = "50";
     private static readonly Random Random = new();
 
     public static string Generate()

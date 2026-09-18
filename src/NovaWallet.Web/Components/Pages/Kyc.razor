@@ -1,0 +1,153 @@
+@page "/kyc"
+@using NovaWallet.Web.Services
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ApiClient Api
+
+<PageTitle>KYC Verification - NovaWallet</PageTitle>
+
+<div class="wallet-page" style="max-width:680px">
+    <div class="wallet-page-header">
+        <h2>KYC Verification</h2>
+        <p>Verify your identity to increase your daily transfer limit</p>
+    </div>
+
+    @if (ErrorMessage is not null)
+    {
+        <div class="auth-alert-error mb-3">
+            <span class="oi oi-warning" style="font-size:0.9rem"></span>
+            <span>@ErrorMessage</span>
+        </div>
+    }
+    @if (SuccessMessage is not null)
+    {
+        <div class="wallet-success-banner mb-3">
+            <span class="oi oi-check-circle" style="font-size:1.1rem"></span>
+            <div>
+                <strong>Document Submitted</strong>
+                <p>@SuccessMessage</p>
+            </div>
+        </div>
+    }
+
+    @if (KycStatus is not null)
+    {
+        <div class="wallet-kyc-status-card @(KycStatus.KycStatus == "Verified" ? "kyc-verified" : KycStatus.KycStatus == "Rejected" ? "kyc-rejected" : "kyc-pending")">
+            <div class="kyc-status-icon">
+                <span class="oi @(KycStatus.KycStatus == "Verified" ? "oi-check" : KycStatus.KycStatus == "Rejected" ? "oi-x" : "oi-timer")"></span>
+            </div>
+            <div class="kyc-status-info">
+                <h3>KYC Status: @KycStatus.KycStatus</h3>
+                <p>@(KycStatus.KycStatus == "Verified" ? "Your account is verified. Daily limit: N 500,000.00" : KycStatus.KycStatus == "Rejected" ? "Your KYC was rejected. Please resubmit your documents." : "Your KYC is under review. Daily limit: N 50,000.00 until verified.")</p>
+            </div>
+        </div>
+    }
+
+    @if (KycStatus is null || KycStatus.KycStatus != "Verified")
+    {
+        <div class="wallet-form-card mt-3">
+            <h5 class="mb-3">Submit KYC Document</h5>
+            <div class="wallet-field">
+                <label>Document Type</label>
+                <select class="wallet-input" @bind="SelectedDocType">
+                    <option value="">-- Select document type --</option>
+                    <option value="BVN">BVN (Bank Verification Number)</option>
+                    <option value="InternationalPassport">International Passport</option>
+                    <option value="NationalPassport">National Passport (NIN)</option>
+                    <option value="DriversLicense">Driver's License</option>
+                </select>
+            </div>
+            <div class="wallet-field">
+                <label>Document Number</label>
+                <div class="auth-input-wrap">
+                    <span class="oi oi-document auth-input-icon"></span>
+                    <input class="wallet-input auth-input" placeholder="Enter document number" @bind="DocumentNumber" />
+                </div>
+                <p class="wallet-field-hint">Enter the number exactly as it appears on your document</p>
+            </div>
+            <button class="btn-primary-lg w-100" disabled="@Loading" @onclick="SubmitKyc">
+                @if (Loading) { <span class="spinner"></span> <span class="ms-2">Submitting...</span> } else { <span class="oi oi-share me-2"></span><span>Submit Document</span> }
+            </button>
+        </div>
+    }
+
+    @if (Documents is not null && Documents.Count > 0)
+    {
+        <div class="wallet-section mt-4">
+            <div class="wallet-section-header">
+                <h3>Submitted Documents</h3>
+            </div>
+            <div class="wallet-tx-list">
+                @foreach (var doc in Documents)
+                {
+                    <div class="wallet-tx-item">
+                        <div class="wallet-tx-icon @(doc.Status == "Verified" ? "tx-credit" : doc.Status == "Rejected" ? "tx-debit" : "tx-pending")">
+                            <span class="oi oi-document"></span>
+                        </div>
+                        <div class="wallet-tx-info">
+                            <p class="wallet-tx-title">@doc.DocumentType</p>
+                            <p class="wallet-tx-date">@doc.DocumentNumber</p>
+                        </div>
+                        <div>
+                            <span class="badge @(doc.Status == "Verified" ? "bg-success" : doc.Status == "Rejected" ? "bg-danger" : "bg-warning")">@doc.Status</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private KycStatusResponse? KycStatus;
+    private List<KycDocumentItem>? Documents;
+    private string SelectedDocType = "";
+    private string DocumentNumber = "";
+    private string? ErrorMessage, SuccessMessage;
+    private bool Loading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadKycStatus();
+        await LoadDocuments();
+    }
+
+    private async Task LoadKycStatus()
+    {
+        try { KycStatus = await Api.GetAsync<KycStatusResponse>("/api/v1/me/kyc"); }
+        catch { }
+    }
+
+    private async Task LoadDocuments()
+    {
+        try { Documents = await Api.GetAsync<List<KycDocumentItem>>("/api/v1/me/kyc/documents"); }
+        catch { }
+    }
+
+    private async Task SubmitKyc()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedDocType)) { ErrorMessage = "Please select a document type."; return; }
+        if (string.IsNullOrWhiteSpace(DocumentNumber)) { ErrorMessage = "Please enter the document number."; return; }
+
+        Loading = true; ErrorMessage = null; SuccessMessage = null;
+        try
+        {
+            var req = new { DocumentType = SelectedDocType, DocumentNumber = DocumentNumber };
+            var result = await Api.PostAsync<KycSubmittedResponse>("/api/v1/me/kyc", req);
+            if (result is not null)
+            {
+                SuccessMessage = $"{SelectedDocType} submitted successfully. Your KYC is under review.";
+                SelectedDocType = "";
+                DocumentNumber = "";
+                await LoadKycStatus();
+                await LoadDocuments();
+            }
+            else ErrorMessage = "Failed to submit document. Please try again.";
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { Loading = false; }
+    }
+
+    public sealed class KycStatusResponse { public long UserId { get; set; } public string CustomerId { get; set; } = ""; public string KycStatus { get; set; } = ""; public string FirstName { get; set; } = ""; public string LastName { get; set; } = ""; public string Email { get; set; } = ""; }
+    public sealed class KycDocumentItem { public long Id { get; set; } public string DocumentType { get; set; } = ""; public string DocumentNumber { get; set; } = ""; public string Status { get; set; } = ""; public DateTime SubmittedAt { get; set; } public DateTime? ReviewedAt { get; set; } public string? ReviewNotes { get; set; } }
+    public sealed class KycSubmittedResponse { public long Id { get; set; } public string DocumentType { get; set; } = ""; public string DocumentNumber { get; set; } = ""; public string Status { get; set; } = ""; }
+}

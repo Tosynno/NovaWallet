@@ -16,16 +16,16 @@ public sealed class WalletService(
     IClock clock,
     AppDbContext db) : IWalletService
 {
-    public async Task<WalletCreatedResult> CreateAsync(string customerId, CancellationToken ct)
+    public async Task<WalletCreatedResult> CreateAsync(string customerId, string currency, string? accountName, CancellationToken ct)
     {
         for (var attempt = 0; attempt < 5; attempt++)
         {
             var accountNumber = AccountNumberGenerator.Generate();
-            var wallet = Wallet.CreateCustomer(customerId, accountNumber, clock.UtcNow);
+            var wallet = Wallet.CreateCustomer(customerId, accountNumber, clock.UtcNow, currency, accountName);
             try
             {
                 await wallets.AddAsync(wallet, ct);
-                return new(wallet.Id, wallet.AccountNumber, wallet.CustomerId, wallet.Currency, wallet.BalanceKobo);
+                return new(wallet.Id, wallet.AccountNumber, wallet.CustomerId, wallet.Currency, wallet.AccountName, wallet.BalanceKobo);
             }
             catch (Microsoft.EntityFrameworkCore.DbUpdateException) when (attempt < 4) { }
         }
@@ -37,6 +37,14 @@ public sealed class WalletService(
         var wallet = await wallets.GetByIdAsync(walletId, ct);
         if (wallet is null || wallet.CustomerId != customerId) return null;
         return new(wallet.AccountNumber, wallet.Currency, wallet.BalanceKobo);
+    }
+
+    public async Task<IReadOnlyList<WalletSummaryResult>> ListByCustomerAsync(string customerId, CancellationToken ct)
+    {
+        return await db.Wallets.AsNoTracking()
+            .Where(x => x.CustomerId == customerId && x.AccountType == AccountType.Customer)
+            .Select(x => new WalletSummaryResult(x.Id, x.AccountNumber, x.Currency, x.AccountName, x.BalanceKobo))
+            .ToListAsync(ct);
     }
 
     public async Task<BalanceResult> CreditAsync(Guid walletId, long amountKobo, string actor, string correlationId, CancellationToken ct)

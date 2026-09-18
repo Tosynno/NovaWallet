@@ -9,17 +9,20 @@ public sealed class Wallet
     public AccountType AccountType { get; private set; }
     public string? SystemKey { get; private set; }
     public string Currency { get; private set; } = "NGN";
+    public string AccountName { get; private set; } = "";
     public long BalanceKobo { get; private set; }
     public long Version { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
 
-    public static Wallet CreateCustomer(string customerId, string accountNumber, DateTimeOffset now) => new()
+    public static Wallet CreateCustomer(string customerId, string accountNumber, DateTimeOffset now, string currency = "NGN", string? accountName = null) => new()
     {
         Id = Guid.NewGuid(),
         AccountNumber = accountNumber,
         CustomerId = customerId,
         AccountType = AccountType.Customer,
+        Currency = currency,
+        AccountName = accountName ?? "",
         BalanceKobo = 0,
         Version = 1,
         CreatedAt = now,

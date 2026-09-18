@@ -59,7 +59,7 @@ public sealed class TestDb : IAsyncDisposable
             new LedgerEntryRepository(Db), new AuditLogRepository(Db), new OutboxRepository(Db),
             new SettlementJobRepository(Db), new ExternalAccountRepository(Db),
             new DailyOutboundCounterRepository(Db), clock ?? new SystemClock(),
-            fees ?? new FeePolicy(50_000, 0.075m), new MockNipPaymentRail());
+            fees ?? new FeePolicy(50_000, 0.075m), new MockNipPaymentRail(), Db);
 
     public ReconciliationService CreateReconciliationService(IClock? clock = null) =>
         new(new UnitOfWork(Db), new ReconciliationRepository(Db), new TransferRepository(Db),
@@ -86,7 +86,7 @@ public sealed class TestDb : IAsyncDisposable
             new LedgerEntryRepository(db), new AuditLogRepository(db), new OutboxRepository(db),
             new SettlementJobRepository(db), new ExternalAccountRepository(db),
             new DailyOutboundCounterRepository(db), clock ?? new SystemClock(),
-            fees ?? new FeePolicy(50_000, 0.075m), new MockNipPaymentRail());
+            fees ?? new FeePolicy(50_000, 0.075m), new MockNipPaymentRail(), db);
 
     public static ReconciliationService CreateReconciliationService(AppDbContext db, IClock? clock = null) =>
         new(new UnitOfWork(db), new ReconciliationRepository(db), new TransferRepository(db),

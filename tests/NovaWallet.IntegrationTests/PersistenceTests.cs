@@ -15,14 +15,14 @@ public sealed class PersistenceTests
     {
         if (!TestDb.IsConfigured) return;
         await using var db = await TestDb.CreateAsync();
-        var source = Wallet.CreateCustomer("idem-customer", "9000000001", DateTimeOffset.UtcNow);
+        var source = Wallet.CreateCustomer("idem-customer", "5000000001", DateTimeOffset.UtcNow);
         source.Credit(Money.Create(100_000), DateTimeOffset.UtcNow);
-        var dest = Wallet.CreateCustomer("other", "9000000002", DateTimeOffset.UtcNow);
+        var dest = Wallet.CreateCustomer("other", "5000000002", DateTimeOffset.UtcNow);
         db.Db.Wallets.AddRange(source, dest);
         await db.Db.SaveChangesAsync();
 
         var service = TestDb.CreateTransferService(db.Db, fees: Fees);
-        var command = new InternalTransferCommand("idem-customer", source.Id, "9000000002", 10_000, "same-key", "corr");
+        var command = new InternalTransferCommand("idem-customer", source.Id, "5000000002", 10_000, "same-key", "corr");
         var first = await service.TransferInternalAsync(command, CancellationToken.None);
         var second = await service.TransferInternalAsync(command, CancellationToken.None);
         Assert.Equal(first.TransferId, second.TransferId);
@@ -39,7 +39,7 @@ public sealed class PersistenceTests
     {
         if (!TestDb.IsConfigured) return;
         await using var db = await TestDb.CreateAsync();
-        var source = Wallet.CreateCustomer("out-cust", "9000000003", DateTimeOffset.UtcNow);
+        var source = Wallet.CreateCustomer("out-cust", "5000000003", DateTimeOffset.UtcNow);
         source.Credit(Money.Create(1_000_000), DateTimeOffset.UtcNow);
         db.Db.Wallets.Add(source);
         await db.Db.SaveChangesAsync();
@@ -70,7 +70,7 @@ public sealed class PersistenceTests
     {
         if (!TestDb.IsConfigured) return;
         await using var db = await TestDb.CreateAsync();
-        var source = Wallet.CreateCustomer("c1", "9000000004", DateTimeOffset.UtcNow);
+        var source = Wallet.CreateCustomer("c1", "5000000004", DateTimeOffset.UtcNow);
         source.Credit(Money.Create(10_000), DateTimeOffset.UtcNow);
         db.Db.Wallets.Add(source);
         await db.Db.SaveChangesAsync();

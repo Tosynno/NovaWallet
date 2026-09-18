@@ -17,17 +17,17 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(o =>
 {
+    o.MapInboundClaims = false;
     o.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true, ValidateAudience = true, ValidateLifetime = true, ValidateIssuerSigningKey = true,
         ValidIssuer = config["Jwt:Issuer"], ValidAudience = config["Jwt:Audience"],
+        NameClaimType = "sub", RoleClaimType = "role",
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key is required.")))
     };
 });
-builder.Services.AddAuthorization(o =>
-{
-    o.AddPolicy("AdminOrProductOwner", p => p.RequireRole(Roles.Admin, Roles.ProductOwner));
-});
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("AdminOrProductOwner", p => p.RequireRole(Roles.Admin, Roles.ProductOwner));
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IChannelService, ChannelService>();
@@ -77,12 +77,21 @@ app.MapPost("/api/v1/auth/register", async (RegisterRequest req, IAuthService se
     return Results.Ok(new { token = result.Token, expiresInSeconds = result.ExpiresInSeconds, customerId = result.CustomerId, walletId = result.WalletId, accountNumber = result.AccountNumber });
 }).AllowAnonymous();
 
+app.MapPost("/api/v1/auth/refresh", async (System.Security.Claims.ClaimsPrincipal user, IAuthService service, CancellationToken ct) =>
+{
+    var customerId = user.FindFirst("sub")?.Value;
+    if (string.IsNullOrWhiteSpace(customerId))
+        return Results.Unauthorized();
+    var result = await service.RefreshTokenAsync(customerId, ct);
+    return result is null ? Results.Unauthorized() : Results.Ok(new { token = result.Token, expiresInSeconds = result.ExpiresInSeconds });
+}).RequireAuthorization();
+
 app.MapPost("/api/v1/channels", async (CreateChannelRequest req, IChannelService service, CancellationToken ct) =>
 {
     try
     {
         var result = await service.CreateAsync(req.ChannelKey, req.ChannelName, ct);
-        return Results.Created($"/api/v1/channels/{result.ChannelKey}", new { result.ChannelKey, result.ChannelName, result.Status, AppKey = result.AppKey, AppSecret = result.AppSecret, message = "Save the AppSecret securely. It will not be shown again." });
+        return Results.Created($"/api/v1/channels/{result.ChannelKey}", new { result.ChannelKey, result.ChannelName, result.Status, result.AppKey, result.AppSecret, message = "Save the AppSecret securely. It will not be shown again." });
     }
     catch (DomainException ex) when (ex.Code == "channel.duplicate")
     {
@@ -100,7 +109,7 @@ app.MapGet("/api/v1/channels", async (IChannelService service, CancellationToken
 app.MapPut("/api/v1/channels/{channelKey}/keys", async (string channelKey, IChannelService service, CancellationToken ct) =>
 {
     var result = await service.RotateKeysAsync(channelKey, ct);
-    return result is null ? Results.NotFound(new { code = "channel.not_found", message = "Channel not found." }) : Results.Ok(new { result.ChannelKey, AppKey = result.AppKey, AppSecret = result.AppSecret, message = "Save the AppSecret securely. It will not be shown again." });
+    return result is null ? Results.NotFound(new { code = "channel.not_found", message = "Channel not found." }) : Results.Ok(new { result.ChannelKey, result.AppKey, result.AppSecret, message = "Save the AppSecret securely. It will not be shown again." });
 }).RequireAuthorization("AdminOrProductOwner");
 
 app.MapPut("/api/v1/channels/{channelKey}/status", async (string channelKey, UpdateChannelStatusRequest req, IChannelService service, CancellationToken ct) =>

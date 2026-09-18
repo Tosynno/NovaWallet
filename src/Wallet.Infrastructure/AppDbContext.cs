@@ -28,6 +28,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.CustomerId).HasMaxLength(100).IsRequired();
             e.Property(x => x.SystemKey).HasMaxLength(50);
             e.Property(x => x.Currency).HasMaxLength(3).IsRequired();
+            e.Property(x => x.AccountName).HasMaxLength(200).IsRequired(false);
             e.Property(x => x.BalanceKobo).IsRequired();
             e.Property(x => x.Version).IsConcurrencyToken();
             e.HasIndex(x => x.AccountNumber).IsUnique();

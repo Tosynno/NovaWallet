@@ -38,6 +38,7 @@ builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<ITransferService, TransferService>();
 builder.Services.AddScoped<IReconciliationService, ReconciliationService>();
 builder.Services.AddScoped<IExternalAccountService, ExternalAccountService>();
+builder.Services.AddScoped<IKycService, KycService>();
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<IPaymentRail, MockNipPaymentRail>();
 builder.Services.AddProblemDetails();
@@ -46,17 +47,17 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(o =>
 {
+    o.MapInboundClaims = false;
     o.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true, ValidateAudience = true, ValidateLifetime = true, ValidateIssuerSigningKey = true,
         ValidIssuer = config["Jwt:Issuer"], ValidAudience = config["Jwt:Audience"],
+        NameClaimType = "sub", RoleClaimType = "role",
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key is required.")))
     };
 });
-builder.Services.AddAuthorization(o =>
-{
-    o.AddPolicy("AdminOrProductOwner", p => p.RequireRole(Roles.Admin, Roles.ProductOwner));
-});
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("AdminOrProductOwner", p => p.RequireRole(Roles.Admin, Roles.ProductOwner));
 
 var app = builder.Build();
 
@@ -96,26 +97,32 @@ if (app.Environment.IsDevelopment())
 
 var api = app.MapGroup("/api/v1").RequireAuthorization();
 
-api.MapPost("/wallets", async (ClaimsPrincipal user, IWalletService service, CancellationToken ct) =>
+api.MapPost("/wallets", async (CreateWalletRequest req, ClaimsPrincipal user, IWalletService service, CancellationToken ct) =>
 {
     var customerId = user.FindFirst("sub")?.Value ?? throw new DomainException("auth.subject_missing", "Authenticated subject is missing.");
-    var wallet = await service.CreateAsync(customerId, ct);
+    var currency = string.IsNullOrWhiteSpace(req?.Currency) ? "NGN" : req.Currency.ToUpperInvariant();
+    var accountName = req?.AccountName;
+    var wallet = await service.CreateAsync(customerId, currency, accountName, ct);
     return Results.Created($"/api/v1/wallets/{wallet.Id}", wallet);
+});
+
+api.MapGet("/wallets", async (ClaimsPrincipal user, IWalletService service, CancellationToken ct) =>
+{
+    var customerId = user.FindFirst("sub")?.Value ?? throw new DomainException("auth.subject_missing", "Authenticated subject is missing.");
+    return Results.Ok(await service.ListByCustomerAsync(customerId, ct));
 });
 
 api.MapGet("/wallets/{walletId:guid}/balance", async (Guid walletId, ClaimsPrincipal user, IWalletService service, CancellationToken ct) =>
 {
     var customerId = user.FindFirst("sub")?.Value ?? throw new DomainException("auth.subject_missing", "Authenticated subject is missing.");
-    var wallet = await service.GetAsync(walletId, customerId, ct);
-    if (wallet is null) throw new DomainException("wallet.not_found", "Wallet not found.");
+    var wallet = await service.GetAsync(walletId, customerId, ct) ?? throw new DomainException("wallet.not_found", "Wallet not found.");
     return Results.Ok(wallet);
 });
 
 api.MapPost("/wallets/{walletId:guid}/credits", async (Guid walletId, CreditRequest req, ClaimsPrincipal user, IWalletService service, HttpContext http, CancellationToken ct) =>
 {
     var customerId = user.FindFirst("sub")?.Value ?? throw new DomainException("auth.subject_missing", "Authenticated subject is missing.");
-    var wallet = await service.GetAsync(walletId, customerId, ct);
-    if (wallet is null) throw new DomainException("wallet.not_found", "Wallet not found.");
+    var wallet = await service.GetAsync(walletId, customerId, ct) ?? throw new DomainException("wallet.not_found", "Wallet not found.");
     var updated = await service.CreditAsync(walletId, req.AmountKobo, customerId, Correlation(http), ct);
     return Results.Ok(new { walletId, req.AmountKobo, BalanceKobo = updated.BalanceKobo });
 });
@@ -123,8 +130,7 @@ api.MapPost("/wallets/{walletId:guid}/credits", async (Guid walletId, CreditRequ
 api.MapGet("/wallets/{walletId:guid}/transactions", async (Guid walletId, int? page, int? pageSize, ClaimsPrincipal user, IWalletService service, CancellationToken ct) =>
 {
     var customerId = user.FindFirst("sub")?.Value ?? throw new DomainException("auth.subject_missing", "Authenticated subject is missing.");
-    var wallet = await service.GetAsync(walletId, customerId, ct);
-    if (wallet is null) throw new DomainException("wallet.not_found", "Wallet not found.");
+    var wallet = await service.GetAsync(walletId, customerId, ct) ?? throw new DomainException("wallet.not_found", "Wallet not found.");
     return Results.Ok(await service.StatementAsync(walletId, page ?? 1, pageSize ?? 25, ct));
 });
 
@@ -132,6 +138,30 @@ api.MapGet("/name-enquiry/{accountNumber}", async (string accountNumber, IWallet
 {
     var result = await service.NameEnquiryAsync(accountNumber, ct);
     return result is null ? Results.NotFound(new { code = "name_enquiry.not_found", message = "Account number not found." }) : Results.Ok(result);
+});
+
+api.MapGet("/me/kyc", async (ClaimsPrincipal user, IKycService service, CancellationToken ct) =>
+{
+    var customerId = user.FindFirst("sub")?.Value ?? throw new DomainException("auth.subject_missing", "Authenticated subject is missing.");
+    var result = await service.GetByCustomerAsync(customerId, ct);
+    return result is null ? Results.NotFound(new { code = "user.not_found", message = "User not found." }) : Results.Ok(result);
+});
+
+api.MapPost("/me/kyc", async (SubmitKycRequest req, ClaimsPrincipal user, IKycService service, CancellationToken ct) =>
+{
+    var customerId = user.FindFirst("sub")?.Value ?? throw new DomainException("auth.subject_missing", "Authenticated subject is missing.");
+    var kycStatus = await service.GetByCustomerAsync(customerId, ct);
+    if (kycStatus is null) return Results.NotFound(new { code = "user.not_found", message = "User not found." });
+    var result = await service.SubmitAsync(kycStatus.UserId, req.DocumentType, req.DocumentNumber, ct);
+    return result is null ? Results.NotFound(new { code = "user.not_found", message = "User not found." }) : Results.Created($"/api/v1/me/kyc/{result.Id}", result);
+});
+
+api.MapGet("/me/kyc/documents", async (ClaimsPrincipal user, IKycService service, CancellationToken ct) =>
+{
+    var customerId = user.FindFirst("sub")?.Value ?? throw new DomainException("auth.subject_missing", "Authenticated subject is missing.");
+    var kycStatus = await service.GetByCustomerAsync(customerId, ct);
+    if (kycStatus is null) return Results.NotFound(new { code = "user.not_found", message = "User not found." });
+    return Results.Ok(await service.ListAsync(kycStatus.UserId, ct));
 });
 
 app.MapPost("/api/v1/transfers/internal", async (InternalTransferRequest req, ClaimsPrincipal user, HttpContext http, ITransferService service, CancellationToken ct) =>
@@ -232,6 +262,8 @@ record CreditRequest(long AmountKobo);
 record InternalTransferRequest(Guid SourceWalletId, string DestinationAccountNumber, long AmountKobo);
 record OutboundTransferRequest(Guid SourceWalletId, string DestinationAccountNumber, string DestinationBankCode, string DestinationAccountName, long AmountKobo);
 record InboundTransferRequest(string DestinationAccountNumber, string OriginatorBankCode, string OriginatorAccountNumber, string OriginatorAccountName, long AmountKobo);
+record SubmitKycRequest(KycDocumentType DocumentType, string DocumentNumber);
+record CreateWalletRequest(string? Currency, string? AccountName);
 
 public sealed class FeePolicyOptions
 {

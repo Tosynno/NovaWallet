@@ -33,6 +33,7 @@ public static class DbInitializer
         }
 
         await EnsureColumnAsync(db, "Users", "PasswordHash", "NVARCHAR(256) NULL", ct);
+        await EnsureColumnAsync(db, "Wallets", "AccountName", "NVARCHAR(200) NULL", ct);
 
         await SeedSystemAccountsAsync(db, ct);
         await SeedExternalAccountsAsync(db, ct);

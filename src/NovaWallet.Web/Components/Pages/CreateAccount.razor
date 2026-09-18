@@ -1,0 +1,109 @@
+@page "/create-account"
+@using NovaWallet.Web.Services
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Create Account - NovaWallet</PageTitle>
+
+<div class="wallet-page" style="max-width:560px">
+    <div class="wallet-page-header">
+        <h2>Create New Account</h2>
+        <p>Open a new wallet account with your preferred currency</p>
+    </div>
+
+    @if (ErrorMessage is not null)
+    {
+        <div class="auth-alert-error mb-3">
+            <span class="oi oi-warning" style="font-size:0.9rem"></span>
+            <span>@ErrorMessage</span>
+        </div>
+    }
+    @if (SuccessMessage is not null)
+    {
+        <div class="wallet-success-banner mb-3">
+            <span class="oi oi-check-circle" style="font-size:1.1rem"></span>
+            <div>
+                <strong>Account Created!</strong>
+                <p>@SuccessMessage</p>
+            </div>
+        </div>
+    }
+
+    <div class="wallet-form-card">
+        <div class="wallet-create-preview">
+            <div class="wallet-create-preview-icon">
+                <span class="oi oi-wallet"></span>
+            </div>
+            <div>
+                <p class="wallet-create-preview-label">Your new account number will be</p>
+                <p class="wallet-create-preview-number">50•••••••••</p>
+                <p class="wallet-create-preview-hint">10-digit number starting with 50, auto-generated</p>
+            </div>
+        </div>
+
+        <div class="wallet-field">
+            <label>Account Name</label>
+            <div class="auth-input-wrap">
+                <span class="oi oi-person auth-input-icon"></span>
+                <input class="wallet-input auth-input" placeholder="e.g. John Doe Savings" @bind="AccountName" @bind:event="oninput" />
+            </div>
+            <p class="wallet-field-hint">Give this account a name to help you identify it (e.g. Savings, Business)</p>
+        </div>
+
+        <div class="wallet-field">
+            <label>Select Currency</label>
+            <div class="auth-input-wrap">
+                <span class="oi oi-globe auth-input-icon"></span>
+                <select class="wallet-input auth-input wallet-select" @bind="SelectedCurrency">
+                    <option value="NGN">NGN — Nigerian Naira</option>
+                    <option value="USD">USD — US Dollar</option>
+                    <option value="EUR">EUR — Euro</option>
+                    <option value="GBP">GBP — British Pound</option>
+                    <option value="GHS">GHS — Ghanaian Cedi</option>
+                    <option value="KES">KES — Kenyan Shilling</option>
+                    <option value="ZAR">ZAR — South African Rand</option>
+                    <option value="CAD">CAD — Canadian Dollar</option>
+                    <option value="AED">AED — UAE Dirham</option>
+                    <option value="JPY">JPY — Japanese Yen</option>
+                </select>
+            </div>
+            <p class="wallet-field-hint">Default is NGN (Nigerian Naira). Choose the currency for this wallet account.</p>
+        </div>
+
+        <button class="btn-primary-lg w-100" disabled="@Loading" @onclick="SubmitNewAccount">
+            @if (Loading) { <span class="spinner"></span> <span class="ms-2">Creating account...</span> } else { <span class="oi oi-plus me-2"></span><span>Create Account</span> }
+        </button>
+
+        <a href="/dashboard" class="wallet-back-link mt-3">
+            <span class="oi oi-arrow-left"></span> Back to Dashboard
+        </a>
+    </div>
+</div>
+
+@code {
+    private string SelectedCurrency = "NGN";
+    private string AccountName = "";
+    private string? ErrorMessage, SuccessMessage;
+    private bool Loading;
+
+    private async Task SubmitNewAccount()
+    {
+        Loading = true; ErrorMessage = null; SuccessMessage = null;
+        try
+        {
+            var result = await Api.PostAsync<CreateAccountResponse>("/api/v1/wallets", new { Currency = SelectedCurrency, AccountName = AccountName });
+            if (result is not null)
+            {
+                SuccessMessage = $"Account {result.AccountNumber} created successfully.";
+                await Task.Delay(1500);
+                Nav.NavigateTo("/dashboard");
+            }
+            else ErrorMessage = "Failed to create account. Please try again.";
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { Loading = false; }
+    }
+
+    public sealed class CreateAccountResponse { public Guid Id { get; set; } public string AccountNumber { get; set; } = ""; public string CustomerId { get; set; } = ""; public string Currency { get; set; } = ""; public string AccountName { get; set; } = ""; public long BalanceKobo { get; set; } }
+}

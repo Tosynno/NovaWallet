@@ -22,7 +22,7 @@ public sealed class ReconciliationTests
         var transferService = TestDb.CreateTransferService(db.Db, clock, Fees);
         var reconService = TestDb.CreateReconciliationService(db.Db, clock);
 
-        var customer = await walletService.CreateAsync("recon-cust", CancellationToken.None);
+        var customer = await walletService.CreateAsync("recon-cust", "NGN", null, CancellationToken.None);
         var walletId = customer.Id;
 
         await walletService.CreditAsync(walletId, 1_000_000, "tester", "corr-1", CancellationToken.None);
@@ -118,7 +118,7 @@ public sealed class ReconciliationTests
         var transferService = TestDb.CreateTransferService(db.Db, clock, Fees);
         var reconService = TestDb.CreateReconciliationService(db.Db, clock);
 
-        var customer = await walletService.CreateAsync("recon-cust-2", CancellationToken.None);
+        var customer = await walletService.CreateAsync("recon-cust-2", "NGN", null, CancellationToken.None);
         await walletService.CreditAsync(customer.Id, 2_000_000, "tester", "corr", CancellationToken.None);
 
         await transferService.TransferOutboundAsync(

@@ -74,7 +74,8 @@ public sealed class AuthService(AppDbContext db, IConfiguration config) : IAuthS
                 db.Users.Add(user);
 
                 accountNumber = AccountNumberGenerator.Generate();
-                var wallet = Wallet.CreateCustomer(customerId, accountNumber, now);
+                var accountName = $"{firstName} {lastName}".Trim();
+                var wallet = Wallet.CreateCustomer(customerId, accountNumber, now, "NGN", accountName);
                 db.Wallets.Add(wallet);
 
                 await db.SaveChangesAsync(ct);
@@ -100,6 +101,16 @@ public sealed class AuthService(AppDbContext db, IConfiguration config) : IAuthS
 
         var token = IssueJwt(customerId, new[] { ("email", email), ("role", "customer") }, expiryMinutes);
         return new RegisterResult(true, null, token, expiryMinutes * 60, customerId, walletId, accountNumber);
+    }
+
+    public async Task<RefreshTokenResult?> RefreshTokenAsync(string customerId, CancellationToken ct)
+    {
+        var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.CustomerId == customerId, ct);
+        if (user is null) return null;
+
+        var expiryMinutes = int.TryParse(config["Jwt:ExpiryMinutes"], out var em) ? em : 60;
+        var token = IssueJwt(user.CustomerId, new[] { ("email", user.Email), ("role", user.Role.ToString().ToLowerInvariant()) }, expiryMinutes);
+        return new RefreshTokenResult(token, expiryMinutes * 60);
     }
 
     private string IssueJwt(string subject, (string type, string value)[] extraClaims, int expiryMinutes)

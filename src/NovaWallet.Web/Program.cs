@@ -7,6 +7,10 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddAuthorization();
 builder.Services.AddAuthorizationCore();
+builder.Services.Configure<Microsoft.AspNetCore.SignalR.HubOptions>(options =>
+{
+    options.KeepAliveInterval = TimeSpan.FromSeconds(30);
+});
 builder.Services.AddCascadingAuthenticationState();
 
 builder.Services.AddSingleton<EncryptionService>();

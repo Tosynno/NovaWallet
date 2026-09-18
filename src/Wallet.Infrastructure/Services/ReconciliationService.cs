@@ -107,7 +107,7 @@ public sealed class ReconciliationService(
     public async Task<IReadOnlyList<ReconciliationReportSummary>> ListReconciliationsAsync(int page, int pageSize, CancellationToken ct)
     {
         var list = await reports.GetPagedAsync(page, pageSize, ct);
-        return list.Select(x => new ReconciliationReportSummary(x.Id, x.WatDate, x.Status, x.TotalOutboundAmountKobo, x.TotalOutboundCount, x.CreatedAt)).ToList();
+        return [.. list.Select(x => new ReconciliationReportSummary(x.Id, x.WatDate, x.Status, x.TotalOutboundAmountKobo, x.TotalOutboundCount, x.CreatedAt))];
     }
 
     private static ReconciliationReportResult ToResult(ReconciliationReport r) =>

@@ -12,9 +12,18 @@
     </div>
 
     <div class="wallet-find-wallet">
-        <p class="wallet-section-label"><span class="oi oi-wallet" style="font-size:0.8rem;margin-right:0.3rem"></span> Enter Wallet ID</p>
+        <p class="wallet-section-label"><span class="oi oi-wallet" style="font-size:0.8rem;margin-right:0.3rem"></span> Select Wallet</p>
         <div class="wallet-input-row">
-            <input class="wallet-input" placeholder="Enter your Wallet ID (e.g. 00000000-0000-...)" @bind="WalletIdInput" />
+            <select class="wallet-input" @bind="SelectedWalletId">
+                <option value="">-- Select wallet --</option>
+                @if (Wallets is not null)
+                {
+                    @foreach (var w in Wallets)
+                    {
+                        <option value="@w.Id">@w.AccountNumber</option>
+                    }
+                }
+            </select>
             <button class="btn-primary-sm" @onclick="LoadStatement"><span class="oi oi-list me-1"></span> Load</button>
         </div>
     </div>
@@ -95,27 +104,35 @@
     {
         <div class="wallet-empty">
             <div class="wallet-empty-icon"><span class="oi oi-list"></span></div>
-            <p>Enter your Wallet ID to view transactions</p>
+            <p>Select a wallet to view transactions</p>
         </div>
     }
 </div>
 
 @code {
-    private string WalletIdInput = "";
+    private string SelectedWalletId = "";
     private int Page = 1;
     private int PageSize = 25;
     private List<StatementItem>? Items;
+    private List<WalletItem>? Wallets;
     private bool Loading;
     private string? ErrorMessage;
 
+    protected override async Task OnInitializedAsync()
+    {
+        Wallets = await Api.GetAsync<List<WalletItem>>("/api/v1/wallets");
+    }
+
     private async Task LoadStatement()
     {
-        if (!Guid.TryParse(WalletIdInput, out var id)) { ErrorMessage = "Invalid Wallet ID. Please enter a valid GUID."; return; }
+        if (string.IsNullOrWhiteSpace(SelectedWalletId)) { ErrorMessage = "Please select a wallet."; return; }
+        if (!Guid.TryParse(SelectedWalletId, out var id)) { ErrorMessage = "Invalid wallet ID."; return; }
         ErrorMessage = null; Loading = true;
         try { Items = await Api.GetAsync<List<StatementItem>>($"/api/v1/wallets/{id}/transactions?page={Page}&pageSize={PageSize}"); }
         catch (Exception ex) { ErrorMessage = ex.Message; }
         finally { Loading = false; }
     }
 
+    public sealed class WalletItem { public Guid Id { get; set; } public string AccountNumber { get; set; } = ""; public string AccountName { get; set; } = ""; public long BalanceKobo { get; set; } }
     public sealed class StatementItem { public Guid? TransferId { get; set; } public string Direction { get; set; } = ""; public long AmountKobo { get; set; } public string Leg { get; set; } = ""; public DateTime CreatedAt { get; set; } }
 }

@@ -9,7 +9,7 @@ public enum LedgerDirection { Debit, Credit }
 public enum ReconciliationStatus { Pending, InProgress, Balanced, Imbalanced }
 public enum ChannelStatus { Active, Suspended, Revoked }
 public enum KycStatus { Pending, Verified, Rejected }
-public enum KycDocumentType { NIN, BVN, DriversLicense, InternationalPassport, UtilityBill }
+public enum KycDocumentType { NIN, BVN, DriversLicense, InternationalPassport, NationalPassport, UtilityBill }
 public enum UserRole { Customer, Admin, ProductOwner }
 
 public static class SystemAccountKeys

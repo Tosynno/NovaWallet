@@ -13,6 +13,10 @@ builder.Services.AddRazorComponents()
 builder.Services.AddAuthorization();
 builder.Services.AddAuthorizationCore();
 builder.Services.AddCascadingAuthenticationState();
+builder.Services.Configure<Microsoft.AspNetCore.SignalR.HubOptions>(options =>
+{
+    options.KeepAliveInterval = TimeSpan.FromSeconds(30);
+});
 
 builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlServer(builder.Configuration.GetConnectionString("LedgerDb")));
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();

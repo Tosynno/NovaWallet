@@ -11,10 +11,12 @@ var cfg = builder.Configuration;
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(o =>
 {
+    o.MapInboundClaims = false;
     o.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true, ValidateAudience = true, ValidateLifetime = true, ValidateIssuerSigningKey = true,
         ValidIssuer = cfg["Jwt:Issuer"], ValidAudience = cfg["Jwt:Audience"],
+        NameClaimType = "sub", RoleClaimType = "role",
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(cfg["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key is required.")))
     };
 });
@@ -28,7 +30,7 @@ builder.Services.AddRateLimiter(o =>
     o.OnRejected = (ctx, ct) =>
     {
         ctx.HttpContext.Response.StatusCode = 429;
-        ctx.HttpContext.Response.Headers["Retry-After"] = "60";
+        ctx.HttpContext.Response.Headers.RetryAfter = "60";
         return ValueTask.CompletedTask;
     };
 
@@ -97,13 +99,13 @@ if (!app.Environment.IsDevelopment())
 app.Use(async (ctx, next) =>
 {
     var headers = ctx.Response.Headers;
-    headers["X-Content-Type-Options"] = "nosniff";
-    headers["X-Frame-Options"] = "DENY";
-    headers["X-XSS-Protection"] = "1; mode=block";
+    headers.XContentTypeOptions = "nosniff";
+    headers.XFrameOptions = "DENY";
+    headers.XXSSProtection = "1; mode=block";
     headers["Referrer-Policy"] = "no-referrer";
     headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()";
-    headers["X-Powered-By"] = "NovaWallet";
-    headers["Cache-Control"] = "no-store";
+    headers.XPoweredBy = "NovaWallet";
+    headers.CacheControl = "no-store";
 
     if (ctx.Request.Headers.TryGetValue("X-Correlation-Id", out var corr) && !string.IsNullOrWhiteSpace(corr))
         headers["X-Correlation-Id"] = corr.ToString();

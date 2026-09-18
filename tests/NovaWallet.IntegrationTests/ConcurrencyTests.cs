@@ -15,9 +15,9 @@ public sealed class ConcurrencyTests
     {
         if (!TestDb.IsConfigured) return;
         await using var db = await TestDb.CreateAsync();
-        var source = Wallet.CreateCustomer("customer-1", "9000000001", DateTimeOffset.UtcNow);
+        var source = Wallet.CreateCustomer("customer-1", "5000000001", DateTimeOffset.UtcNow);
         source.Credit(Money.Create(1_000), DateTimeOffset.UtcNow);
-        var destinations = Enumerable.Range(0, 20).Select(i => Wallet.CreateCustomer("dest", $"90{(i + 2):D8}", DateTimeOffset.UtcNow)).ToArray();
+        var destinations = Enumerable.Range(0, 20).Select(i => Wallet.CreateCustomer("dest", $"50{(i + 2):D8}", DateTimeOffset.UtcNow)).ToArray();
         db.Db.Wallets.Add(source);
         db.Db.Wallets.AddRange(destinations);
         await db.Db.SaveChangesAsync();
@@ -34,7 +34,7 @@ public sealed class ConcurrencyTests
         Assert.Equal(10, successCount);
 
         await using var verify = TestDb.NewContext(db.TestConnection);
-        var finalSource = await verify.Wallets.SingleAsync(x => x.CustomerId == "customer-1" && x.AccountNumber == "9000000001");
+        var finalSource = await verify.Wallets.SingleAsync(x => x.CustomerId == "customer-1" && x.AccountNumber == "5000000001");
         Assert.Equal(0, finalSource.BalanceKobo);
         Assert.True(finalSource.BalanceKobo >= 0);
         Assert.Equal(10, await verify.Transfers.CountAsync());
@@ -45,7 +45,7 @@ public sealed class ConcurrencyTests
     {
         if (!TestDb.IsConfigured) return;
         await using var db = await TestDb.CreateAsync();
-        var wallet = Wallet.CreateCustomer("credit-cust", "9000000002", DateTimeOffset.UtcNow);
+        var wallet = Wallet.CreateCustomer("credit-cust", "5000000002", DateTimeOffset.UtcNow);
         db.Db.Wallets.Add(wallet);
         await db.Db.SaveChangesAsync();
 
@@ -67,7 +67,7 @@ public sealed class ConcurrencyTests
     {
         if (!TestDb.IsConfigured) return;
         await using var db = await TestDb.CreateAsync();
-        var destination = Wallet.CreateCustomer("dest-cust", "9000000003", DateTimeOffset.UtcNow);
+        var destination = Wallet.CreateCustomer("dest-cust", "5000000003", DateTimeOffset.UtcNow);
         var sources = Enumerable.Range(0, 20).Select(i =>
         {
             var w = Wallet.CreateCustomer($"src-{i}", $"91{(i + 1):D8}", DateTimeOffset.UtcNow);
@@ -82,14 +82,14 @@ public sealed class ConcurrencyTests
         {
             await using var ctx = TestDb.NewContext(db.TestConnection);
             var service = TestDb.CreateTransferService(ctx, fees: Fees);
-            try { return await service.TransferInternalAsync(new InternalTransferCommand(s.CustomerId, s.Id, "9000000003", 100, $"key-{i}", Guid.NewGuid().ToString("N")), CancellationToken.None); }
+            try { return await service.TransferInternalAsync(new InternalTransferCommand(s.CustomerId, s.Id, "5000000003", 100, $"key-{i}", Guid.NewGuid().ToString("N")), CancellationToken.None); }
             catch (DomainException) { return null; }
         })).ToArray();
         var results = await Task.WhenAll(tasks);
         Assert.Equal(20, results.Count(x => x is not null));
 
         await using var verify = TestDb.NewContext(db.TestConnection);
-        var finalDest = await verify.Wallets.SingleAsync(x => x.AccountNumber == "9000000003");
+        var finalDest = await verify.Wallets.SingleAsync(x => x.AccountNumber == "5000000003");
         Assert.Equal(2_000, finalDest.BalanceKobo);
     }
 
@@ -98,7 +98,10 @@ public sealed class ConcurrencyTests
     {
         if (!TestDb.IsConfigured) return;
         await using var db = await TestDb.CreateAsync();
-        var w1 = Wallet.CreateCustomer("limit-cust", "9000000004", DateTimeOffset.UtcNow); w1.Credit(Money.Create(60_000_000), DateTimeOffset.UtcNow);
+        var user = User.Create("limit-cust", "limit@test.com", "Limit", "Customer", UserRole.Customer, DateTimeOffset.UtcNow);
+        user.VerifyKyc(DateTimeOffset.UtcNow);
+        db.Db.Users.Add(user);
+        var w1 = Wallet.CreateCustomer("limit-cust", "5000000004", DateTimeOffset.UtcNow); w1.Credit(Money.Create(60_000_000), DateTimeOffset.UtcNow);
         db.Db.Wallets.Add(w1);
         await db.Db.SaveChangesAsync();
 
@@ -116,6 +119,6 @@ public sealed class ConcurrencyTests
         await using var verify = TestDb.NewContext(db.TestConnection);
         var totalOutbound = await verify.Transfers.Where(x => x.CustomerId == "limit-cust" && x.Type == TransferType.Outbound).SumAsync(x => (long?)x.AmountKobo) ?? 0;
         Assert.Equal(50_000_000, totalOutbound);
-        Assert.True(totalOutbound <= DailyOutboundLimitPolicy.LimitKobo);
+        Assert.True(totalOutbound <= DailyOutboundLimitPolicy.VerifiedLimitKobo);
     }
 }
