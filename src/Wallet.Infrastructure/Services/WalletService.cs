@@ -56,21 +56,68 @@ public sealed class WalletService(
                 ?? throw new DomainException("wallet.not_found", "Wallet not found.");
             if (wallet.AccountType != AccountType.Customer) throw new DomainException("wallet.not_customer", "Only customer wallets can be credited directly.");
 
-            var before = wallet.BalanceKobo;
-            wallet.Credit(Money.Create(amountKobo), clock.UtcNow);
-            await ledgerEntries.AddAsync(LedgerEntry.Create(null, wallet.Id, LedgerDirection.Credit, Money.Create(amountKobo), "Deposit", clock.UtcNow), ct);
-
+            var settlement = await wallets.GetBySystemKeyForUpdateAsync(SystemAccountKeys.Settlement, ct)
+                ?? throw new DomainException("system_account.missing", "Settlement account is not seeded.");
             var ledgerHolding = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.LedgerHolding, ct)
                 ?? throw new DomainException("external_account.missing", "Ledger holding account is not seeded.");
+            var extSettlementHolding = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.SettlementHolding, ct)
+                ?? throw new DomainException("external_account.missing", "Settlement holding account is not seeded.");
+
+            var before = wallet.BalanceKobo;
+            wallet.Credit(Money.Create(amountKobo), clock.UtcNow);
+            settlement.Debit(Money.Create(amountKobo), clock.UtcNow);
             ledgerHolding.Credit(Money.Create(amountKobo), clock.UtcNow);
+            extSettlementHolding.Debit(Money.Create(amountKobo), clock.UtcNow);
+
+            await ledgerEntries.AddAsync(LedgerEntry.Create(null, wallet.Id, LedgerDirection.Credit, Money.Create(amountKobo), "Deposit", clock.UtcNow), ct);
+            await ledgerEntries.AddAsync(LedgerEntry.Create(null, settlement.Id, LedgerDirection.Debit, Money.Create(amountKobo), "SettlementOut", clock.UtcNow), ct);
 
             await auditLogs.AddAsync(AuditLog.Create(actor, "wallet.credit", "Wallet", wallet.Id.ToString(),
-                JsonSerializer.Serialize(new { BalanceKobo = before }),
-                JsonSerializer.Serialize(new { wallet.BalanceKobo, LedgerHolding = ledgerHolding.BalanceKobo }),
+                JsonSerializer.Serialize(new { BalanceKobo = before, Settlement = settlement.BalanceKobo + amountKobo }),
+                JsonSerializer.Serialize(new { wallet.BalanceKobo, Settlement = settlement.BalanceKobo, LedgerHolding = ledgerHolding.BalanceKobo }),
                 correlationId, clock.UtcNow), ct);
             await uow.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return new BalanceResult(wallet.AccountNumber, wallet.Currency, wallet.BalanceKobo);
+        }
+        catch { await tx.RollbackAsync(ct); throw; }
+    }
+
+    public async Task<BalanceResult?> AdminCreditAsync(string accountNumber, long amountKobo, string actor, string correlationId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(accountNumber) || amountKobo <= 0) return null;
+
+        var wallet = await wallets.GetByAccountNumberAsync(accountNumber, ct);
+        if (wallet is null || wallet.AccountType != AccountType.Customer) return null;
+
+        await using var tx = await uow.BeginTransactionAsync(ct);
+        try
+        {
+            var walletForUpdate = await wallets.GetByIdForUpdateAsync(wallet.Id, ct)
+                ?? throw new DomainException("wallet.not_found", "Wallet not found.");
+            var settlement = await wallets.GetBySystemKeyForUpdateAsync(SystemAccountKeys.Settlement, ct)
+                ?? throw new DomainException("system_account.missing", "Settlement account is not seeded.");
+            var ledgerHolding = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.LedgerHolding, ct)
+                ?? throw new DomainException("external_account.missing", "Ledger holding account is not seeded.");
+            var extSettlementHolding = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.SettlementHolding, ct)
+                ?? throw new DomainException("external_account.missing", "Settlement holding account is not seeded.");
+
+            var before = walletForUpdate.BalanceKobo;
+            walletForUpdate.Credit(Money.Create(amountKobo), clock.UtcNow);
+            settlement.Debit(Money.Create(amountKobo), clock.UtcNow);
+            ledgerHolding.Credit(Money.Create(amountKobo), clock.UtcNow);
+            extSettlementHolding.Debit(Money.Create(amountKobo), clock.UtcNow);
+
+            await ledgerEntries.AddAsync(LedgerEntry.Create(null, walletForUpdate.Id, LedgerDirection.Credit, Money.Create(amountKobo), "AdminCredit", clock.UtcNow), ct);
+            await ledgerEntries.AddAsync(LedgerEntry.Create(null, settlement.Id, LedgerDirection.Debit, Money.Create(amountKobo), "SettlementOut", clock.UtcNow), ct);
+
+            await auditLogs.AddAsync(AuditLog.Create(actor, "wallet.admin_credit", "Wallet", walletForUpdate.Id.ToString(),
+                JsonSerializer.Serialize(new { BalanceKobo = before, Settlement = settlement.BalanceKobo + amountKobo }),
+                JsonSerializer.Serialize(new { walletForUpdate.BalanceKobo, Settlement = settlement.BalanceKobo, LedgerHolding = ledgerHolding.BalanceKobo }),
+                correlationId, clock.UtcNow), ct);
+            await uow.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return new BalanceResult(walletForUpdate.AccountNumber, walletForUpdate.Currency, walletForUpdate.BalanceKobo);
         }
         catch { await tx.RollbackAsync(ct); throw; }
     }

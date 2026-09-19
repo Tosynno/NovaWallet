@@ -73,6 +73,16 @@ public sealed class TransferRepository(AppDbContext db) : ITransferRepository
             .OrderBy(x => x.CreatedAt).ToListAsync(ct);
     }
 
+    public Task<List<Transfer>> GetSettledInboundForReconciliationAsync(DateOnly dayStart, DateOnly dayEnd, CancellationToken ct)
+    {
+        var startUtc = WatBusinessDay.StartOfWatDayUtc(dayStart);
+        var endUtc = WatBusinessDay.StartOfWatDayUtc(dayEnd);
+        return db.Transfers
+            .Where(x => x.Type == TransferType.Inbound && x.Status == TransferStatus.Settled && x.ReconciledAt == null
+                && x.CreatedAt >= startUtc && x.CreatedAt < endUtc)
+            .OrderBy(x => x.CreatedAt).ToListAsync(ct);
+    }
+
     public Task<List<Transfer>> GetUnknownOutboundAsync(int take, CancellationToken ct) =>
         db.Transfers.Where(x => x.Type == TransferType.Outbound && x.Status == TransferStatus.Unknown && x.ExternalReference != null)
             .OrderBy(x => x.UpdatedAt).Take(take).ToListAsync(ct);

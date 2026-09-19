@@ -32,6 +32,7 @@ public interface ITransferRepository
     Task<Transfer?> GetByIdAsync(Guid id, CancellationToken ct);
     Task<Transfer?> GetByIdAndCustomerAsync(Guid id, string customerId, CancellationToken ct);
     Task<List<Transfer>> GetSettledOutboundForReconciliationAsync(DateOnly dayStart, DateOnly dayEnd, CancellationToken ct);
+    Task<List<Transfer>> GetSettledInboundForReconciliationAsync(DateOnly dayStart, DateOnly dayEnd, CancellationToken ct);
     Task<List<Transfer>> GetUnknownOutboundAsync(int take, CancellationToken ct);
     Task<long> GetDailyOutboundTotalAsync(string customerId, DateTimeOffset dayStart, DateTimeOffset dayEnd, CancellationToken ct);
     Task<int> CountByIdempotencyKeyAsync(string key, CancellationToken ct);

@@ -10,6 +10,7 @@ using NovaWallet.Domain;
 using NovaWallet.Infrastructure;
 using NovaWallet.Infrastructure.Repositories;
 using NovaWallet.Infrastructure.Services;
+using NovaWallet.WalletApi;
 
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
@@ -124,7 +125,7 @@ api.MapPost("/wallets/{walletId:guid}/credits", async (Guid walletId, CreditRequ
     var customerId = user.FindFirst("sub")?.Value ?? throw new DomainException("auth.subject_missing", "Authenticated subject is missing.");
     var wallet = await service.GetAsync(walletId, customerId, ct) ?? throw new DomainException("wallet.not_found", "Wallet not found.");
     var updated = await service.CreditAsync(walletId, req.AmountKobo, customerId, Correlation(http), ct);
-    return Results.Ok(new { walletId, req.AmountKobo, BalanceKobo = updated.BalanceKobo });
+    return Results.Ok(new { walletId, req.AmountKobo, updated.BalanceKobo });
 });
 
 api.MapGet("/wallets/{walletId:guid}/transactions", async (Guid walletId, int? page, int? pageSize, ClaimsPrincipal user, IWalletService service, CancellationToken ct) =>
@@ -232,6 +233,19 @@ app.MapPost("/api/v1/admin/transfers/{transferId:guid}/repost", async (Guid tran
 })
 .RequireAuthorization("AdminOrProductOwner");
 
+app.MapPost("/api/v1/admin/wallets/credit", async (AdminCreditRequest req, HttpContext http, IWalletService service, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(req.AccountNumber) || req.AmountKobo <= 0)
+        return Results.BadRequest(new { code = "admin.invalid_request", message = "AccountNumber and a positive AmountKobo are required." });
+    var correlationId = Correlation(http);
+    var actor = http.User.FindFirst("sub")?.Value ?? "ADMIN";
+    var result = await service.AdminCreditAsync(req.AccountNumber, req.AmountKobo, actor, correlationId, ct);
+    return result is null
+        ? Results.NotFound(new { code = "wallet.not_found", message = "Customer account not found." })
+        : Results.Ok(new { result.AccountNumber, result.Currency, result.BalanceKobo });
+})
+.RequireAuthorization("AdminOrProductOwner");
+
 app.Use(async (ctx, next) =>
 {
     try { await next(); }
@@ -258,15 +272,16 @@ static string RequireIdempotencyKey(HttpContext ctx)
 static string Correlation(HttpContext ctx) =>
     ctx.Request.Headers.TryGetValue("X-Correlation-Id", out var value) && !string.IsNullOrWhiteSpace(value) ? value.ToString() : Guid.NewGuid().ToString("N");
 
-record CreditRequest(long AmountKobo);
-record InternalTransferRequest(Guid SourceWalletId, string DestinationAccountNumber, long AmountKobo);
-record OutboundTransferRequest(Guid SourceWalletId, string DestinationAccountNumber, string DestinationBankCode, string DestinationAccountName, long AmountKobo);
-record InboundTransferRequest(string DestinationAccountNumber, string OriginatorBankCode, string OriginatorAccountNumber, string OriginatorAccountName, long AmountKobo);
-record SubmitKycRequest(KycDocumentType DocumentType, string DocumentNumber);
-record CreateWalletRequest(string? Currency, string? AccountName);
-
-public sealed class FeePolicyOptions
+namespace NovaWallet.WalletApi
 {
-    public long OutboundFeeKobo { get; set; } = 50_000;
-    public decimal VatRate { get; set; } = 0.075m;
+    record CreditRequest(long AmountKobo);
+    record SubmitKycRequest(KycDocumentType DocumentType, string DocumentNumber);
+    record CreateWalletRequest(string? Currency, string? AccountName);
+    record AdminCreditRequest(string AccountNumber, long AmountKobo);
+
+    public sealed class FeePolicyOptions
+    {
+        public long OutboundFeeKobo { get; set; } = 50_000;
+        public decimal VatRate { get; set; } = 0.075m;
+    }
 }

@@ -46,7 +46,9 @@ public sealed class AuthService(AppDbContext db, IConfiguration config) : IAuthS
 
         var expiryMinutes = int.TryParse(config["Jwt:ExpiryMinutes"], out var lm) ? lm : 60;
         var token = IssueJwt(user.CustomerId, new[] { ("email", user.Email), ("role", user.Role.ToString().ToLowerInvariant()) }, expiryMinutes);
-        return new LoginResult(token, expiryMinutes * 60, user.CustomerId);
+
+        var wallet = await db.Wallets.AsNoTracking().FirstOrDefaultAsync(x => x.CustomerId == user.CustomerId && x.AccountType == AccountType.Customer, ct);
+        return new LoginResult(token, expiryMinutes * 60, user.CustomerId, wallet?.Id, wallet?.AccountNumber);
     }
 
     public async Task<RegisterResult> RegisterAsync(string email, string password, string firstName, string lastName, string? phoneNumber, CancellationToken ct)

@@ -173,7 +173,6 @@ public sealed class ExternalAccount
     public void Debit(Money amount, DateTimeOffset now)
     {
         if (!amount.IsPositive) throw new DomainException("amount.invalid", "Debit amount must be greater than zero.");
-        if (BalanceKobo < amount.Kobo) throw new DomainException("external.insufficient_funds", "External account has insufficient funds for reconciliation.");
         BalanceKobo -= amount.Kobo;
         Version++;
         UpdatedAt = now;

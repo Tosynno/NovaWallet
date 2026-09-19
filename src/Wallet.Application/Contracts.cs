@@ -31,6 +31,7 @@ public interface IWalletService
     Task<WalletCreatedResult> CreateAsync(string customerId, string currency, string? accountName, CancellationToken ct);
     Task<BalanceResult?> GetAsync(Guid walletId, string customerId, CancellationToken ct);
     Task<BalanceResult> CreditAsync(Guid walletId, long amountKobo, string actor, string correlationId, CancellationToken ct);
+    Task<BalanceResult?> AdminCreditAsync(string accountNumber, long amountKobo, string actor, string correlationId, CancellationToken ct);
     Task<IReadOnlyList<StatementItem>> StatementAsync(Guid walletId, int page, int pageSize, CancellationToken ct);
     Task<NameEnquiryResult?> NameEnquiryAsync(string accountNumber, CancellationToken ct);
     Task<IReadOnlyList<WalletSummaryResult>> ListByCustomerAsync(string customerId, CancellationToken ct);
@@ -90,7 +91,7 @@ public interface IAuthService
 }
 
 public sealed record ChannelTokenResult(string Token, int ExpiresInSeconds);
-public sealed record LoginResult(string Token, int ExpiresInSeconds, string CustomerId);
+public sealed record LoginResult(string Token, int ExpiresInSeconds, string CustomerId, Guid? WalletId, string? AccountNumber);
 public sealed record RegisterResult(bool Success, string? Error, string? Token, int ExpiresInSeconds, string? CustomerId, Guid? WalletId, string? AccountNumber);
 public sealed record RefreshTokenResult(string Token, int ExpiresInSeconds);
 

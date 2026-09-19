@@ -62,7 +62,7 @@ app.MapPost("/api/v1/auth/login", async (LoginRequest req, IAuthService service,
     if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
         return Results.BadRequest(new { code = "auth.missing_credentials", message = "Email and Password are required." });
     var result = await service.LoginAsync(req.Email, req.Password, ct);
-    return result is null ? Results.Unauthorized() : Results.Ok(new { token = result.Token, expiresInSeconds = result.ExpiresInSeconds, customerId = result.CustomerId });
+    return result is null ? Results.Unauthorized() : Results.Ok(new { token = result.Token, expiresInSeconds = result.ExpiresInSeconds, customerId = result.CustomerId, walletId = result.WalletId, accountNumber = result.AccountNumber });
 }).AllowAnonymous();
 
 app.MapPost("/api/v1/auth/register", async (RegisterRequest req, IAuthService service, CancellationToken ct) =>

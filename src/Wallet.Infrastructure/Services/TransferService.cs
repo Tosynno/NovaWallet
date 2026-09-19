@@ -15,7 +15,6 @@ public sealed class TransferService(
     IAuditLogRepository auditLogs,
     IOutboxRepository outbox,
     ISettlementJobRepository settlementJobs,
-    IExternalAccountRepository externalAccounts,
     IDailyOutboundCounterRepository dailyCounters,
     IClock clock,
     FeePolicy fees,
@@ -95,6 +94,22 @@ public sealed class TransferService(
         var kycVerified = user?.KycStatus == KycStatus.Verified;
         var dailyLimit = DailyOutboundLimitPolicy.LimitFor(kycVerified);
 
+        const int maxRetries = 3;
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await TransferOutboundCoreAsync(command, feeKobo, vatKobo, totalDebit, hash, kycVerified, dailyLimit, ct);
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 1205 && attempt < maxRetries - 1)
+            {
+                await Task.Delay(50 * (attempt + 1), ct);
+            }
+        }
+    }
+
+    private async Task<TransferResult> TransferOutboundCoreAsync(OutboundTransferCommand command, long feeKobo, long vatKobo, long totalDebit, string hash, bool kycVerified, long dailyLimit, CancellationToken ct)
+    {
         await using var tx = await uow.BeginTransactionAsync(ct);
         try
         {
@@ -187,8 +202,6 @@ public sealed class TransferService(
                 ?? throw new DomainException("wallet.destination_not_found", "Destination wallet not found.");
             var settlement = await wallets.GetBySystemKeyForUpdateAsync(SystemAccountKeys.Settlement, ct)
                 ?? throw new DomainException("system_account.missing", "Settlement account is not seeded.");
-            var extLedger = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.LedgerHolding, ct)
-                ?? throw new DomainException("external_account.missing", "Ledger holding account is not seeded.");
 
             var transfer = Transfer.CreateInbound(
                 dest.CustomerId, dest.Id, dest.AccountNumber,
@@ -197,7 +210,6 @@ public sealed class TransferService(
 
             settlement.Debit(Money.Create(command.AmountKobo), clock.UtcNow);
             dest.Credit(Money.Create(command.AmountKobo), clock.UtcNow);
-            extLedger.Credit(Money.Create(command.AmountKobo), clock.UtcNow);
 
             await transfers.AddAsync(transfer, ct);
             await transfers.AddIdempotencyRecordAsync(IdempotencyRecord.Create(dest.CustomerId, command.IdempotencyKey, hash, transfer.Id), ct);

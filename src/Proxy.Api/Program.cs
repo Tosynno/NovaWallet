@@ -224,11 +224,14 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy" })).AllowAnonymo
 
 app.Run();
 
-public sealed class SwaggerOptions
+namespace NovaWallet.ProxyApi
 {
-    public bool Enabled { get; set; } = true;
-    public string RoutePrefix { get; set; } = "swagger";
-    public string Title { get; set; } = "NovaWallet Gateway API";
-    public string Description { get; set; } = "ProxyApi gateway - forwards to WalletApi. All endpoints require JWT.";
-    public string Version { get; set; } = "v1";
+    public sealed class SwaggerOptions
+    {
+        public bool Enabled { get; set; } = true;
+        public string RoutePrefix { get; set; } = "swagger";
+        public string Title { get; set; } = "NovaWallet Gateway API";
+        public string Description { get; set; } = "ProxyApi gateway - forwards to WalletApi. All endpoints require JWT.";
+        public string Version { get; set; } = "v1";
+    }
 }

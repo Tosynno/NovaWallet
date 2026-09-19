@@ -57,14 +57,14 @@ public sealed class TestDb : IAsyncDisposable
     public TransferService CreateTransferService(IClock? clock = null, FeePolicy? fees = null) =>
         new(new UnitOfWork(Db), new WalletRepository(Db), new TransferRepository(Db),
             new LedgerEntryRepository(Db), new AuditLogRepository(Db), new OutboxRepository(Db),
-            new SettlementJobRepository(Db), new ExternalAccountRepository(Db),
+            new SettlementJobRepository(Db),
             new DailyOutboundCounterRepository(Db), clock ?? new SystemClock(),
             fees ?? new FeePolicy(50_000, 0.075m), new MockNipPaymentRail(), Db);
 
     public ReconciliationService CreateReconciliationService(IClock? clock = null) =>
         new(new UnitOfWork(Db), new ReconciliationRepository(Db), new TransferRepository(Db),
             new WalletRepository(Db), new ExternalAccountRepository(Db),
-            new LedgerEntryRepository(Db), new AuditLogRepository(Db), clock ?? new SystemClock());
+            new AuditLogRepository(Db), clock ?? new SystemClock());
 
     public async ValueTask DisposeAsync()
     {
@@ -84,12 +84,12 @@ public sealed class TestDb : IAsyncDisposable
     public static TransferService CreateTransferService(AppDbContext db, IClock? clock = null, FeePolicy? fees = null) =>
         new(new UnitOfWork(db), new WalletRepository(db), new TransferRepository(db),
             new LedgerEntryRepository(db), new AuditLogRepository(db), new OutboxRepository(db),
-            new SettlementJobRepository(db), new ExternalAccountRepository(db),
+            new SettlementJobRepository(db),
             new DailyOutboundCounterRepository(db), clock ?? new SystemClock(),
             fees ?? new FeePolicy(50_000, 0.075m), new MockNipPaymentRail(), db);
 
     public static ReconciliationService CreateReconciliationService(AppDbContext db, IClock? clock = null) =>
         new(new UnitOfWork(db), new ReconciliationRepository(db), new TransferRepository(db),
             new WalletRepository(db), new ExternalAccountRepository(db),
-            new LedgerEntryRepository(db), new AuditLogRepository(db), clock ?? new SystemClock());
+            new AuditLogRepository(db), clock ?? new SystemClock());
 }

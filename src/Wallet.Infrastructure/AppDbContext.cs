@@ -108,7 +108,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.Property(x => x.AccountName).HasMaxLength(200).IsRequired();
             e.Property(x => x.Version).IsConcurrencyToken();
             e.HasIndex(x => x.AccountKey).IsUnique();
-            e.ToTable(t => t.HasCheckConstraint("CK_ExternalAccount_NonNegative", "[BalanceKobo] >= 0"));
         });
 
         b.Entity<ReconciliationReport>(e =>

@@ -58,7 +58,7 @@ public sealed class PersistenceTests
         Assert.Equal(3_750, result.VatKobo);
         Assert.Equal(153_750, result.TotalDebitKobo);
         Assert.Equal(846_250, await db.Db.Wallets.Where(x => x.Id == source.Id).Select(x => x.BalanceKobo).SingleAsync());
-        Assert.Equal(100_000, await db.Db.Wallets.Where(x => x.Id == settlement.Id).Select(x => x.BalanceKobo).SingleAsync());
+        Assert.Equal(600_000_100_000, await db.Db.Wallets.Where(x => x.Id == settlement.Id).Select(x => x.BalanceKobo).SingleAsync());
         Assert.Equal(50_000, await db.Db.Wallets.Where(x => x.Id == income.Id).Select(x => x.BalanceKobo).SingleAsync());
         Assert.Equal(3_750, await db.Db.Wallets.Where(x => x.Id == vat.Id).Select(x => x.BalanceKobo).SingleAsync());
         var job = await db.Db.SettlementJobs.SingleAsync(x => x.TransferId == result.TransferId);

@@ -56,9 +56,38 @@ public sealed class AdminDatabaseService(AppDbContext db)
         var now = DateTimeOffset.UtcNow;
         transfer.ResetForRepost(now);
         var job = await db.SettlementJobs.SingleOrDefaultAsync(x => x.TransferId == transferId);
-        if (job is not null) job.Repost(now);
+        job?.Repost(now);
         await db.SaveChangesAsync();
         return true;
+    }
+
+    public async Task<CreditResultDto?> CreditAccountAsync(string accountNumber, long amountKobo, string actor)
+    {
+        if (string.IsNullOrWhiteSpace(accountNumber) || amountKobo <= 0) return null;
+
+        var wallet = await db.Wallets.SingleOrDefaultAsync(x => x.AccountNumber == accountNumber && x.AccountType == AccountType.Customer);
+        if (wallet is null) return null;
+
+        var settlement = await db.Wallets.SingleAsync(x => x.SystemKey == SystemAccountKeys.Settlement);
+        var ledgerHolding = await db.ExternalAccounts.SingleAsync(x => x.AccountKey == ExternalAccountKeys.LedgerHolding);
+        var extSettlementHolding = await db.ExternalAccounts.SingleAsync(x => x.AccountKey == ExternalAccountKeys.SettlementHolding);
+
+        var now = DateTimeOffset.UtcNow;
+        var before = wallet.BalanceKobo;
+        wallet.Credit(Money.Create(amountKobo), now);
+        settlement.Debit(Money.Create(amountKobo), now);
+        ledgerHolding.Credit(Money.Create(amountKobo), now);
+        extSettlementHolding.Debit(Money.Create(amountKobo), now);
+
+        db.LedgerEntries.Add(LedgerEntry.Create(null, wallet.Id, LedgerDirection.Credit, Money.Create(amountKobo), "AdminCredit", now));
+        db.LedgerEntries.Add(LedgerEntry.Create(null, settlement.Id, LedgerDirection.Debit, Money.Create(amountKobo), "SettlementOut", now));
+        db.AuditLogs.Add(AuditLog.Create(actor, "wallet.admin_credit", "Wallet", wallet.Id.ToString(),
+            System.Text.Json.JsonSerializer.Serialize(new { BalanceKobo = before, Settlement = settlement.BalanceKobo + amountKobo }),
+            System.Text.Json.JsonSerializer.Serialize(new { wallet.BalanceKobo, Settlement = settlement.BalanceKobo, LedgerHolding = ledgerHolding.BalanceKobo }),
+            Guid.NewGuid().ToString("N"), now));
+
+        await db.SaveChangesAsync();
+        return new CreditResultDto(wallet.AccountNumber, wallet.Currency, wallet.BalanceKobo, settlement.BalanceKobo, ledgerHolding.BalanceKobo);
     }
 
     public async Task<ChannelDto> CreateChannelAsync(string channelKey, string channelName)
@@ -103,4 +132,5 @@ public sealed class AdminDatabaseService(AppDbContext db)
     public record ChannelDto(string ChannelKey, string ChannelName, string AppKey, string Status, DateTimeOffset CreatedAt) { public string? AppSecret { get; init; } }
     public record UserDto(long Id, string CustomerId, string Email, string? PhoneNumber, string FirstName, string LastName, string KycStatus, DateTimeOffset CreatedAt);
     public record DashboardStatsDto(int TotalTransfers, int SettledCount, int FailedCount, int UnknownCount, long TotalOutboundAmount, int CustomerCount, int ChannelCount, int PendingJobs);
+    public record CreditResultDto(string AccountNumber, string Currency, long BalanceKobo, long SettlementBalanceKobo, long LedgerHoldingBalanceKobo);
 }

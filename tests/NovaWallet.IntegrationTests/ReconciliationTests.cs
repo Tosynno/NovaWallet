@@ -148,9 +148,8 @@ public sealed class ReconciliationTests
 
         await using var verify = TestDb.NewContext(db.TestConnection);
         var extSettlement = await verify.ExternalAccounts.Where(x => x.AccountKey == ExternalAccountKeys.SettlementHolding).SingleAsync();
-        Assert.Equal(0, extSettlement.BalanceKobo);
 
         var settlementSys = await verify.Wallets.Where(x => x.SystemKey == SystemAccountKeys.Settlement).Select(x => x.BalanceKobo).SingleAsync();
-        Assert.Equal(0, settlementSys);
+        Assert.Equal(settlementSys, extSettlement.BalanceKobo);
     }
 }

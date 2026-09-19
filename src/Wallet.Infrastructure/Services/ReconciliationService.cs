@@ -11,7 +11,6 @@ public sealed class ReconciliationService(
     ITransferRepository transfers,
     IWalletRepository wallets,
     IExternalAccountRepository externalAccounts,
-    ILedgerEntryRepository ledgerEntries,
     IAuditLogRepository auditLogs,
     IClock clock) : IReconciliationService
 {
@@ -30,28 +29,20 @@ public sealed class ReconciliationService(
             await reports.AddAsync(report, ct);
             await uow.SaveChangesAsync(ct);
 
-            var settled = await transfers.GetSettledOutboundForReconciliationAsync(day, day.AddDays(1), ct);
+            var settledOutbound = await transfers.GetSettledOutboundForReconciliationAsync(day, day.AddDays(1), ct);
+            var settledInbound = await transfers.GetSettledInboundForReconciliationAsync(day, day.AddDays(1), ct);
 
             long totalAmount = 0, totalFee = 0, totalVat = 0;
 
-            foreach (var transfer in settled)
+            foreach (var transfer in settledOutbound)
             {
                 totalAmount += transfer.AmountKobo;
                 totalFee += transfer.FeeKobo;
                 totalVat += transfer.VatKobo;
 
-                var settlement = await wallets.GetBySystemKeyForUpdateAsync(SystemAccountKeys.Settlement, ct)
-                    ?? throw new DomainException("system_account.missing", "Settlement account is not seeded.");
-                settlement.Debit(Money.Create(transfer.AmountKobo), now);
-
-                var extLedger = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.LedgerHolding, ct)
-                    ?? throw new DomainException("external_account.missing", "Ledger holding account is not seeded.");
-                extLedger.Debit(Money.Create(transfer.TotalDebitKobo), now);
-
                 var extSettlement = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.SettlementHolding, ct)
                     ?? throw new DomainException("external_account.missing", "Settlement holding account is not seeded.");
                 extSettlement.Credit(Money.Create(transfer.AmountKobo), now);
-                extSettlement.Debit(Money.Create(transfer.AmountKobo), now);
 
                 var extIncome = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.IncomeHolding, ct)
                     ?? throw new DomainException("external_account.missing", "Income holding account is not seeded.");
@@ -61,7 +52,27 @@ public sealed class ReconciliationService(
                     ?? throw new DomainException("external_account.missing", "VAT holding account is not seeded.");
                 extVat.Credit(Money.Create(transfer.VatKobo), now);
 
-                await ledgerEntries.AddAsync(LedgerEntry.Create(transfer.Id, settlement.Id, LedgerDirection.Debit, Money.Create(transfer.AmountKobo), "SettlementPayout", now), ct);
+                var extLedger = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.LedgerHolding, ct)
+                    ?? throw new DomainException("external_account.missing", "Ledger holding account is not seeded.");
+                extLedger.Debit(Money.Create(transfer.TotalDebitKobo), now);
+
+                transfer.MarkReconciled(now);
+
+                await auditLogs.AddAsync(AuditLog.Create("SYSTEM", "transfer.reconciled", "Transfer", transfer.Id.ToString(),
+                    JsonSerializer.Serialize(new { transfer.Status, Reconciled = false }),
+                    JsonSerializer.Serialize(new { transfer.Status, Reconciled = true }),
+                    transfer.CorrelationId, now), ct);
+            }
+
+            foreach (var transfer in settledInbound)
+            {
+                var extSettlement = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.SettlementHolding, ct)
+                    ?? throw new DomainException("external_account.missing", "Settlement holding account is not seeded.");
+                extSettlement.Debit(Money.Create(transfer.AmountKobo), now);
+
+                var extLedger = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.LedgerHolding, ct)
+                    ?? throw new DomainException("external_account.missing", "Ledger holding account is not seeded.");
+                extLedger.Credit(Money.Create(transfer.AmountKobo), now);
 
                 transfer.MarkReconciled(now);
 
@@ -73,7 +84,7 @@ public sealed class ReconciliationService(
 
             await uow.SaveChangesAsync(ct);
 
-            report.RecordOutboundTotals(totalAmount, totalFee, totalVat, settled.Count);
+            report.RecordOutboundTotals(totalAmount, totalFee, totalVat, settledOutbound.Count);
 
             var customerSum = await wallets.GetCustomerSumBalanceAsync(ct);
             var settlementSys = await wallets.GetSystemAccountBalanceAsync(SystemAccountKeys.Settlement, ct);

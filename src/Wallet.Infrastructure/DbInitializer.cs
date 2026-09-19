@@ -61,17 +61,20 @@ public static class DbInitializer
     private static async Task SeedSystemAccountsAsync(AppDbContext db, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
-        await SeedAsync(db, SystemAccountKeys.Settlement, "0000000001", AccountType.Settlement, now, ct);
+        await SeedAsync(db, SystemAccountKeys.Settlement, "0000000001", AccountType.Settlement, now, ct, 600_000_000_000L);
         await SeedAsync(db, SystemAccountKeys.Vat, "0000000002", AccountType.Vat, now, ct);
         await SeedAsync(db, SystemAccountKeys.Income, "0000000003", AccountType.Income, now, ct);
     }
 
-    private static async Task SeedAsync(AppDbContext db, string key, string accountNumber, AccountType type, DateTimeOffset now, CancellationToken ct)
+    private static async Task SeedAsync(AppDbContext db, string key, string accountNumber, AccountType type, DateTimeOffset now, CancellationToken ct, long initialBalanceKobo = 0)
     {
         if (await db.Wallets.AnyAsync(x => x.SystemKey == key || x.AccountNumber == accountNumber, ct)) return;
         try
         {
-            db.Wallets.Add(Wallet.CreateSystem(type, key, accountNumber, now));
+            var wallet = Wallet.CreateSystem(type, key, accountNumber, now);
+            if (initialBalanceKobo > 0)
+                wallet.Credit(Money.Create(initialBalanceKobo), now);
+            db.Wallets.Add(wallet);
             await db.SaveChangesAsync(ct);
         }
         catch (DbUpdateException)
@@ -90,17 +93,20 @@ public static class DbInitializer
         const string firstBank = "First Bank of Nigeria";
         const string firstBankCode = "011";
         await SeedExternalAsync(db, ExternalAccountKeys.LedgerHolding, ExternalAccountType.LedgerHolding, firstBank, firstBankCode, "7000000001", "NovaWallet Ledger Holding", now, ct);
-        await SeedExternalAsync(db, ExternalAccountKeys.SettlementHolding, ExternalAccountType.SettlementHolding, firstBank, firstBankCode, "7000000002", "NovaWallet Settlement Holding", now, ct);
+        await SeedExternalAsync(db, ExternalAccountKeys.SettlementHolding, ExternalAccountType.SettlementHolding, firstBank, firstBankCode, "7000000002", "NovaWallet Settlement Holding", now, ct, 600_000_000_000L);
         await SeedExternalAsync(db, ExternalAccountKeys.IncomeHolding, ExternalAccountType.IncomeHolding, firstBank, firstBankCode, "7000000003", "NovaWallet Income Holding", now, ct);
         await SeedExternalAsync(db, ExternalAccountKeys.VatHolding, ExternalAccountType.VatHolding, firstBank, firstBankCode, "7000000004", "NovaWallet VAT Holding", now, ct);
     }
 
-    private static async Task SeedExternalAsync(AppDbContext db, string key, ExternalAccountType type, string bankName, string bankCode, string accountNumber, string accountName, DateTimeOffset now, CancellationToken ct)
+    private static async Task SeedExternalAsync(AppDbContext db, string key, ExternalAccountType type, string bankName, string bankCode, string accountNumber, string accountName, DateTimeOffset now, CancellationToken ct, long initialBalanceKobo = 0)
     {
         if (await db.ExternalAccounts.AnyAsync(x => x.AccountKey == key, ct)) return;
         try
         {
-            db.ExternalAccounts.Add(ExternalAccount.Create(key, type, bankName, bankCode, accountNumber, accountName, now));
+            var account = ExternalAccount.Create(key, type, bankName, bankCode, accountNumber, accountName, now);
+            if (initialBalanceKobo > 0)
+                account.Credit(Money.Create(initialBalanceKobo), now);
+            db.ExternalAccounts.Add(account);
             await db.SaveChangesAsync(ct);
         }
         catch (DbUpdateException)
