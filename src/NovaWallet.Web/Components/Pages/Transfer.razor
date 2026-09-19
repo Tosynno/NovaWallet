@@ -50,7 +50,7 @@
             }
             else
             {
-                <select class="wallet-input wallet-select" value="@SelectedWalletId" @onchange="OnWalletChanged">
+                <select class="wallet-input wallet-select" @bind="SelectedWalletId">
                     <option value="">-- Select wallet --</option>
                     @foreach (var w in Wallets)
                     {
@@ -70,7 +70,7 @@
                 <label>Destination Account Number</label>
                 <div class="auth-input-wrap">
                     <span class="oi oi-person auth-input-icon"></span>
-                    <input class="wallet-input auth-input" placeholder="Enter 10-digit NovaWallet account number" @bind="InternalModel.DestinationAccountNumber" />
+                    <input class="wallet-input auth-input" placeholder="Enter 10-digit NovaWallet account number" @bind="InternalAccountNumber" />
                 </div>
                 <div class="wallet-verify-row">
                     <button class="btn-primary-sm" @onclick="VerifyAccount" disabled="@Verifying">
@@ -91,25 +91,26 @@
                 </div>
             </div>
             <div class="wallet-field">
-                <label>Amount</label>
+                <label>Amount (Naira)</label>
                 <div class="wallet-amount-input">
                     <span class="wallet-currency">N</span>
-                    <input type="number" class="wallet-input" placeholder="0.00" @bind="InternalModel.AmountKobo" />
+                    <input type="number" class="wallet-input" placeholder="0.00" @bind="InternalAmountNaira" />
                 </div>
                 <p class="wallet-field-hint">Internal transfers are free — no fees applied</p>
-                @if (SelectedBalanceKobo > 0 && InternalModel.AmountKobo > 0)
+                @if (SelectedBalanceKobo > 0 && InternalAmountNaira > 0)
                 {
+                    var amountKobo = (long)(InternalAmountNaira * 100);
                     <div class="wallet-balance-preview">
                         <div><span>Wallet balance</span><strong>N @((SelectedBalanceKobo / 100m).ToString("N2"))</strong></div>
-                        <div><span>After transfer</span><strong class="@(SelectedBalanceKobo - InternalModel.AmountKobo < 0 ? "text-debit" : "text-credit")">N @(((SelectedBalanceKobo - InternalModel.AmountKobo) / 100m).ToString("N2"))</strong></div>
+                        <div><span>After transfer</span><strong class="@(amountKobo > SelectedBalanceKobo ? "text-debit" : "text-credit")">N @(((SelectedBalanceKobo - amountKobo) / 100m).ToString("N2"))</strong></div>
                     </div>
-                    @if (InternalModel.AmountKobo > SelectedBalanceKobo)
+                    @if (amountKobo > SelectedBalanceKobo)
                     {
                         <p class="wallet-error"><span class="oi oi-warning" style="font-size:0.8rem"></span> Insufficient balance for this transfer</p>
                     }
                 }
             </div>
-            <button class="btn-primary-lg w-100" disabled="@Loading || InternalModel.AmountKobo > SelectedBalanceKobo || string.IsNullOrWhiteSpace(SelectedWalletId) || string.IsNullOrWhiteSpace(VerifiedAccountName)" @onclick="DoInternal">
+            <button class="btn-primary-lg w-100" disabled="@Loading" @onclick="DoInternal">
                 @if (Loading) { <span class="spinner"></span> <span class="ms-2">Processing...</span> } else { <span class="oi oi-transfer me-2"></span><span>Send Transfer</span> }
             </button>
         }
@@ -139,18 +140,19 @@
                 </div>
             </div>
             <div class="wallet-field">
-                <label>Amount</label>
+                <label>Amount (Naira)</label>
                 <div class="wallet-amount-input">
                     <span class="wallet-currency">N</span>
-                    <input type="number" class="wallet-input" placeholder="0.00" @bind="OutboundModel.AmountKobo" />
+                    <input type="number" class="wallet-input" placeholder="0.00" @bind="OutboundAmountNaira" />
                 </div>
                 <div class="wallet-fee-hint">
                     <span class="oi oi-info"></span>
                     <p>A transfer fee of N 500.00 and 7.5% VAT applies to outbound transfers</p>
                 </div>
-                @if (SelectedBalanceKobo > 0 && OutboundModel.AmountKobo > 0)
+                @if (SelectedBalanceKobo > 0 && OutboundAmountNaira > 0)
                 {
-                    var totalDebit = OutboundModel.AmountKobo + 50_000 + 3_750;
+                    var amountKobo = (long)(OutboundAmountNaira * 100);
+                    var totalDebit = amountKobo + 50_000 + 3_750;
                     <div class="wallet-balance-preview">
                         <div><span>Wallet balance</span><strong>N @((SelectedBalanceKobo / 100m).ToString("N2"))</strong></div>
                         <div><span>Total debit (amount + fee + VAT)</span><strong>N @((totalDebit / 100m).ToString("N2"))</strong></div>
@@ -161,7 +163,7 @@
                     }
                 }
             </div>
-            <button class="btn-primary-lg w-100" disabled="@Loading || OutboundModel.AmountKobo <= 0 || (SelectedBalanceKobo > 0 && OutboundModel.AmountKobo + 50_000 + 3_750 > SelectedBalanceKobo) || string.IsNullOrWhiteSpace(SelectedWalletId)" @onclick="DoOutbound">
+            <button class="btn-primary-lg w-100" disabled="@Loading" @onclick="DoOutbound">
                 @if (Loading) { <span class="spinner"></span> <span class="ms-2">Processing...</span> } else { <span class="oi oi-share me-2"></span><span>Send to Bank</span> }
             </button>
         }
@@ -178,6 +180,10 @@
     private List<WalletItem>? Wallets;
     private long SelectedBalanceKobo;
 
+    private string InternalAccountNumber = "";
+    private decimal InternalAmountNaira;
+    private decimal OutboundAmountNaira;
+
     private string SelectedWalletId
     {
         get => _selectedWalletId;
@@ -190,7 +196,6 @@
         }
     }
 
-    private InternalTransferModel InternalModel = new();
     private OutboundTransferModel OutboundModel = new();
 
     protected override async Task OnInitializedAsync()
@@ -198,24 +203,28 @@
         try
         {
             Wallets = await Api.GetAsync<List<WalletItem>>("/api/v1/wallets");
+            if (Wallets is not null && Wallets.Count > 0)
+            {
+                SelectedWalletId = Wallets[0].Id.ToString();
+            }
         }
         catch { }
     }
 
-    private void OnWalletChanged(ChangeEventArgs e)
-    {
-        SelectedWalletId = e?.Value?.ToString() ?? "";
-    }
-
     private async Task VerifyAccount()
     {
-        if (string.IsNullOrWhiteSpace(InternalModel.DestinationAccountNumber)) return;
+        if (string.IsNullOrWhiteSpace(InternalAccountNumber))
+        { ErrorMessage = "Please enter a destination account number."; return; }
+
         Verifying = true; VerifiedAccountName = null; ErrorMessage = null;
         try
         {
-            var result = await Api.GetAsync<NameEnquiryResponse>($"/api/v1/name-enquiry/{InternalModel.DestinationAccountNumber}");
+            var result = await Api.GetAsync<NameEnquiryResponse>($"/api/v1/name-enquiry/{InternalAccountNumber.Trim()}");
             if (result is not null)
+            {
                 VerifiedAccountName = result.AccountName;
+                ErrorMessage = null;
+            }
             else
                 ErrorMessage = "Account not found. Please check the account number.";
         }
@@ -226,16 +235,27 @@
     private async Task DoInternal()
     {
         if (string.IsNullOrWhiteSpace(SelectedWalletId)) { ErrorMessage = "Please select a source wallet."; return; }
+        if (string.IsNullOrWhiteSpace(InternalAccountNumber)) { ErrorMessage = "Please enter a destination account number."; return; }
         if (string.IsNullOrWhiteSpace(VerifiedAccountName)) { ErrorMessage = "Please verify the destination account first."; return; }
-        if (InternalModel.AmountKobo <= 0) { ErrorMessage = "Please enter a valid amount."; return; }
-        if (InternalModel.AmountKobo > SelectedBalanceKobo) { ErrorMessage = "Insufficient wallet balance."; return; }
+        if (InternalAmountNaira <= 0) { ErrorMessage = "Please enter a valid amount."; return; }
+
+        var amountKobo = (long)(InternalAmountNaira * 100);
+        if (amountKobo > SelectedBalanceKobo) { ErrorMessage = "Insufficient wallet balance."; return; }
 
         Loading = true; ErrorMessage = null; SuccessMessage = null;
         try
         {
-            var req = new { SourceWalletId = SelectedWalletId, DestinationAccountNumber = InternalModel.DestinationAccountNumber, AmountKobo = InternalModel.AmountKobo };
+            var req = new { SourceWalletId = SelectedWalletId, DestinationAccountNumber = InternalAccountNumber.Trim(), AmountKobo = amountKobo };
             var result = await Api.PostAsync<TransferResponse>("/api/v1/transfers/internal", req, IdempotencyKey);
-            if (result is not null) { SuccessMessage = $"Reference: {result.Reference}"; IdempotencyKey = Guid.NewGuid().ToString("N"); VerifiedAccountName = null; }
+            if (result is not null)
+            {
+                SuccessMessage = $"Reference: {result.Reference}";
+                IdempotencyKey = Guid.NewGuid().ToString("N");
+                VerifiedAccountName = null;
+                InternalAccountNumber = "";
+                InternalAmountNaira = 0;
+                await ReloadWallets();
+            }
             else ErrorMessage = "Transfer failed. Please try again.";
         }
         catch (Exception ex) { ErrorMessage = ex.Message; }
@@ -245,25 +265,48 @@
     private async Task DoOutbound()
     {
         if (string.IsNullOrWhiteSpace(SelectedWalletId)) { ErrorMessage = "Please select a source wallet."; return; }
-        if (OutboundModel.AmountKobo <= 0) { ErrorMessage = "Please enter a valid amount."; return; }
-        var totalDebit = OutboundModel.AmountKobo + 50_000 + 3_750;
+        if (string.IsNullOrWhiteSpace(OutboundModel.DestinationAccountNumber)) { ErrorMessage = "Please enter a destination account number."; return; }
+        if (string.IsNullOrWhiteSpace(OutboundModel.DestinationBankCode)) { ErrorMessage = "Please enter a bank code."; return; }
+        if (OutboundAmountNaira <= 0) { ErrorMessage = "Please enter a valid amount."; return; }
+
+        var amountKobo = (long)(OutboundAmountNaira * 100);
+        var totalDebit = amountKobo + 50_000 + 3_750;
         if (totalDebit > SelectedBalanceKobo) { ErrorMessage = "Insufficient wallet balance for amount + fee + VAT."; return; }
 
         Loading = true; ErrorMessage = null; SuccessMessage = null;
         try
         {
-            var req = new { SourceWalletId = SelectedWalletId, DestinationAccountNumber = OutboundModel.DestinationAccountNumber, DestinationBankCode = OutboundModel.DestinationBankCode, DestinationAccountName = OutboundModel.DestinationAccountName, AmountKobo = OutboundModel.AmountKobo };
+            var req = new { SourceWalletId = SelectedWalletId, DestinationAccountNumber = OutboundModel.DestinationAccountNumber, DestinationBankCode = OutboundModel.DestinationBankCode, DestinationAccountName = OutboundModel.DestinationAccountName, AmountKobo = amountKobo };
             var result = await Api.PostAsync<TransferResponse>("/api/v1/transfers/outbound", req, IdempotencyKey);
-            if (result is not null) { SuccessMessage = $"Reference: {result.Reference}"; IdempotencyKey = Guid.NewGuid().ToString("N"); }
+            if (result is not null)
+            {
+                SuccessMessage = $"Reference: {result.Reference}";
+                IdempotencyKey = Guid.NewGuid().ToString("N");
+                OutboundAmountNaira = 0;
+                await ReloadWallets();
+            }
             else ErrorMessage = "Transfer failed. Please try again.";
         }
         catch (Exception ex) { ErrorMessage = ex.Message; }
         finally { Loading = false; }
     }
 
+    private async Task ReloadWallets()
+    {
+        try
+        {
+            Wallets = await Api.GetAsync<List<WalletItem>>("/api/v1/wallets");
+            if (Wallets is not null)
+            {
+                var current = Wallets.FirstOrDefault(x => x.Id.ToString() == SelectedWalletId);
+                if (current is not null) SelectedBalanceKobo = current.BalanceKobo;
+            }
+        }
+        catch { }
+    }
+
     public sealed class WalletItem { public Guid Id { get; set; } public string AccountNumber { get; set; } = ""; public string AccountName { get; set; } = ""; public long BalanceKobo { get; set; } }
     public sealed class NameEnquiryResponse { public string AccountNumber { get; set; } = ""; public string AccountName { get; set; } = ""; public string BankCode { get; set; } = ""; public string BankName { get; set; } = ""; }
-    public sealed class InternalTransferModel { public string DestinationAccountNumber { get; set; } = ""; public long AmountKobo { get; set; } }
-    public sealed class OutboundTransferModel { public string DestinationAccountNumber { get; set; } = ""; public string DestinationBankCode { get; set; } = ""; public string DestinationAccountName { get; set; } = ""; public long AmountKobo { get; set; } }
+    public sealed class OutboundTransferModel { public string DestinationAccountNumber { get; set; } = ""; public string DestinationBankCode { get; set; } = ""; public string DestinationAccountName { get; set; } = ""; }
     public sealed class TransferResponse { public Guid TransferId { get; set; } public string Reference { get; set; } = ""; }
 }
