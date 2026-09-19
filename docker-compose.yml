@@ -16,7 +16,7 @@ services:
       context: .
       dockerfile: src/Wallet.Api/Dockerfile
     environment:
-      ConnectionStrings__LedgerDb: "Server=sqlserver;Database=Novawallet;User Id=sa;Password=Your_Strong_Password123!;TrustServerCertificate=True;Encrypt=True"
+      ConnectionStrings__LedgerDb: "Server=sqlserver;Database=Novawallet;User Id=sa;Password=Your_Strong_Password123!;TrustServerCertificate=True;Encrypt=False"
       Jwt__Issuer: NovaWallet
       Jwt__Audience: NovaWallet.Public
       Jwt__Key: development-only-key-change-this-to-a-secret-store-value-1234567890
@@ -31,7 +31,7 @@ services:
       context: .
       dockerfile: src/Settlement.Worker/Dockerfile
     environment:
-      ConnectionStrings__LedgerDb: "Server=sqlserver;Database=Novawallet;User Id=sa;Password=Your_Strong_Password123!;TrustServerCertificate=True;Encrypt=True"
+      ConnectionStrings__LedgerDb: "Server=sqlserver;Database=Novawallet;User Id=sa;Password=Your_Strong_Password123!;TrustServerCertificate=True;Encrypt=False"
     depends_on:
       sqlserver: { condition: service_healthy }
     restart: on-failure
@@ -41,11 +41,11 @@ services:
       context: .
       dockerfile: src/Auth.Api/Dockerfile
     environment:
-      ConnectionStrings__LedgerDb: "Server=sqlserver;Database=Novawallet;User Id=sa;Password=Your_Strong_Password123!;TrustServerCertificate=True;Encrypt=True"
+      ConnectionStrings__LedgerDb: "Server=sqlserver;Database=Novawallet;User Id=sa;Password=Your_Strong_Password123!;TrustServerCertificate=True;Encrypt=False"
       Jwt__Issuer: NovaWallet
       Jwt__Audience: NovaWallet.Public
       Jwt__Key: development-only-key-change-this-to-a-secret-store-value-1234567890
-      Jwt__ExpiryMinutes: "5"
+      Jwt__ExpiryMinutes: "60"
       ASPNETCORE_ENVIRONMENT: Development
     depends_on:
       sqlserver: { condition: service_healthy }
@@ -87,9 +87,11 @@ services:
       context: .
       dockerfile: src/NovaWallet.Admin.Web/Dockerfile
     environment:
-      ApiBaseUrl: http://proxy-api:8080
+      ConnectionStrings__LedgerDb: "Server=sqlserver;Database=Novawallet;User Id=sa;Password=Your_Strong_Password123!;TrustServerCertificate=True;Encrypt=False"
+      AdminCredentials__Username: "admin"
+      AdminCredentials__Password: "Admin@12345"
       ASPNETCORE_ENVIRONMENT: Development
     depends_on:
-      - proxy-api
+      - sqlserver
     expose: ["8080"]
     restart: on-failure
