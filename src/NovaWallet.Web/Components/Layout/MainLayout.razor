@@ -3,6 +3,7 @@
 @inject AuthService Auth
 @inject CustomAuthStateProvider AuthStateProvider
 @inject NavigationManager Nav
+@implements IDisposable
 
 <div class="wallet-app">
     <aside class="wallet-sidebar">
@@ -51,6 +52,28 @@
 
 @code {
     private string CurrentPage => Nav.Uri.Split('/').LastOrDefault()?.Split('?').FirstOrDefault() ?? "";
+    private System.Threading.Timer? _idleTimer;
+
+    protected override void OnInitialized()
+    {
+        _idleTimer = new System.Threading.Timer(CheckSession, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private void CheckSession(object? state)
+    {
+        if (!Auth.IsAuthenticated) return;
+
+        if (Auth.IsIdle || !Auth.IsAuthenticated)
+        {
+            InvokeAsync(async () =>
+            {
+                Auth.Logout();
+                AuthStateProvider.NotifyChanged();
+                Nav.NavigateTo("/login", forceLoad: true);
+                await Task.CompletedTask;
+            });
+        }
+    }
 
     private string GetInitials()
     {
@@ -64,5 +87,10 @@
         Auth.Logout();
         AuthStateProvider.NotifyChanged();
         Nav.NavigateTo("/login", forceLoad: true);
+    }
+
+    public void Dispose()
+    {
+        _idleTimer?.Dispose();
     }
 }
