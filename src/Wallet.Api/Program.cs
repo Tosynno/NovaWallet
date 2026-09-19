@@ -233,16 +233,14 @@ app.MapPost("/api/v1/admin/transfers/{transferId:guid}/repost", async (Guid tran
 })
 .RequireAuthorization("AdminOrProductOwner");
 
-app.MapPost("/api/v1/admin/wallets/credit", async (AdminCreditRequest req, HttpContext http, IWalletService service, CancellationToken ct) =>
+app.MapPost("/api/v1/admin/settlement/credit", async (AdminCreditRequest req, HttpContext http, IWalletService service, CancellationToken ct) =>
 {
-    if (string.IsNullOrWhiteSpace(req.AccountNumber) || req.AmountKobo <= 0)
-        return Results.BadRequest(new { code = "admin.invalid_request", message = "AccountNumber and a positive AmountKobo are required." });
+    if (req.AmountKobo <= 0)
+        return Results.BadRequest(new { code = "admin.invalid_request", message = "A positive AmountKobo is required." });
     var correlationId = Correlation(http);
     var actor = http.User.FindFirst("sub")?.Value ?? "ADMIN";
-    var result = await service.AdminCreditAsync(req.AccountNumber, req.AmountKobo, actor, correlationId, ct);
-    return result is null
-        ? Results.NotFound(new { code = "wallet.not_found", message = "Customer account not found." })
-        : Results.Ok(new { result.AccountNumber, result.Currency, result.BalanceKobo });
+    var result = await service.CreditSettlementAsync(req.AmountKobo, actor, correlationId, ct);
+    return Results.Ok(new { result.AccountNumber, result.Currency, result.BalanceKobo });
 })
 .RequireAuthorization("AdminOrProductOwner");
 
@@ -277,7 +275,7 @@ namespace NovaWallet.WalletApi
     record CreditRequest(long AmountKobo);
     record SubmitKycRequest(KycDocumentType DocumentType, string DocumentNumber);
     record CreateWalletRequest(string? Currency, string? AccountName);
-    record AdminCreditRequest(string AccountNumber, long AmountKobo);
+    record AdminCreditRequest(long AmountKobo);
 
     public sealed class FeePolicyOptions
     {

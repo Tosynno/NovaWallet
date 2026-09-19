@@ -91,8 +91,23 @@ public sealed class ReconciliationService(
             var incomeSys = await wallets.GetSystemAccountBalanceAsync(SystemAccountKeys.Income, ct);
             var vatSys = await wallets.GetSystemAccountBalanceAsync(SystemAccountKeys.Vat, ct);
 
-            var extLedgerBal = await externalAccounts.GetBalanceByKeyAsync(ExternalAccountKeys.LedgerHolding, ct);
-            var extSettlementBal = await externalAccounts.GetBalanceByKeyAsync(ExternalAccountKeys.SettlementHolding, ct);
+            var extLedger = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.LedgerHolding, ct)
+                ?? throw new DomainException("external_account.missing", "Ledger holding account is not seeded.");
+            var extSettlement = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.SettlementHolding, ct)
+                ?? throw new DomainException("external_account.missing", "Settlement holding account is not seeded.");
+
+            var ledgerDiff = customerSum - extLedger.BalanceKobo;
+            if (ledgerDiff > 0) extLedger.Credit(Money.Create(ledgerDiff), now);
+            else if (ledgerDiff < 0) extLedger.Debit(Money.Create(-ledgerDiff), now);
+
+            var settlementDiff = settlementSys - extSettlement.BalanceKobo;
+            if (settlementDiff > 0) extSettlement.Credit(Money.Create(settlementDiff), now);
+            else if (settlementDiff < 0) extSettlement.Debit(Money.Create(-settlementDiff), now);
+
+            await uow.SaveChangesAsync(ct);
+
+            var extLedgerBal = extLedger.BalanceKobo;
+            var extSettlementBal = extSettlement.BalanceKobo;
             var extIncomeBal = await externalAccounts.GetBalanceByKeyAsync(ExternalAccountKeys.IncomeHolding, ct);
             var extVatBal = await externalAccounts.GetBalanceByKeyAsync(ExternalAccountKeys.VatHolding, ct);
 

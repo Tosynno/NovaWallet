@@ -61,33 +61,86 @@ public sealed class AdminDatabaseService(AppDbContext db)
         return true;
     }
 
-    public async Task<CreditResultDto?> CreditAccountAsync(string accountNumber, long amountKobo, string actor)
+    public async Task<SettlementBalanceDto> GetSettlementBalanceAsync()
+    {
+        var settlement = await db.Wallets.SingleAsync(x => x.SystemKey == SystemAccountKeys.Settlement);
+        var extSettlement = await db.ExternalAccounts.SingleAsync(x => x.AccountKey == ExternalAccountKeys.SettlementHolding);
+        var ledgerHolding = await db.ExternalAccounts.SingleAsync(x => x.AccountKey == ExternalAccountKeys.LedgerHolding);
+        var income = await db.Wallets.SingleAsync(x => x.SystemKey == SystemAccountKeys.Income);
+        var vat = await db.Wallets.SingleAsync(x => x.SystemKey == SystemAccountKeys.Vat);
+        var customerSum = await db.Wallets.Where(x => x.AccountType == AccountType.Customer).SumAsync(x => (long?)x.BalanceKobo) ?? 0;
+        return new SettlementBalanceDto(settlement.AccountNumber, settlement.BalanceKobo, extSettlement.BalanceKobo, ledgerHolding.BalanceKobo, income.BalanceKobo, vat.BalanceKobo, customerSum);
+    }
+
+    public async Task<CreditResultDto?> CreditSettlementAsync(long amountKobo, string actor)
+    {
+        if (amountKobo <= 0) return null;
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var settlement = await db.Wallets.FromSqlInterpolated($"SELECT TOP 1 * FROM Wallets WITH (UPDLOCK, HOLDLOCK, ROWLOCK) WHERE SystemKey = {SystemAccountKeys.Settlement}").SingleAsync();
+            var extSettlement = await db.ExternalAccounts.FromSqlInterpolated($"SELECT TOP 1 * FROM ExternalAccounts WITH (UPDLOCK, HOLDLOCK, ROWLOCK) WHERE AccountKey = {ExternalAccountKeys.SettlementHolding}").SingleAsync();
+
+            var now = DateTimeOffset.UtcNow;
+            var before = settlement.BalanceKobo;
+            settlement.Credit(Money.Create(amountKobo), now);
+            extSettlement.Credit(Money.Create(amountKobo), now);
+
+            db.LedgerEntries.Add(LedgerEntry.Create(null, settlement.Id, LedgerDirection.Credit, Money.Create(amountKobo), "SettlementFunding", now));
+            db.AuditLogs.Add(AuditLog.Create(actor, "settlement.credit", "Wallet", settlement.Id.ToString(),
+                System.Text.Json.JsonSerializer.Serialize(new { SettlementBalance = before }),
+                System.Text.Json.JsonSerializer.Serialize(new { SettlementBalance = settlement.BalanceKobo, ExtSettlementBalance = extSettlement.BalanceKobo }),
+                Guid.NewGuid().ToString("N"), now));
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+            return new CreditResultDto(settlement.AccountNumber, "NGN", before, settlement.BalanceKobo, extSettlement.BalanceKobo);
+        }
+        catch { await tx.RollbackAsync(); throw; }
+    }
+
+    public async Task<CustomerLookupDto?> VerifyCustomerAccountAsync(string accountNumber)
+    {
+        if (string.IsNullOrWhiteSpace(accountNumber)) return null;
+        var wallet = await db.Wallets.AsNoTracking().SingleOrDefaultAsync(x => x.AccountNumber == accountNumber && x.AccountType == AccountType.Customer);
+        if (wallet is null) return null;
+        var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.CustomerId == wallet.CustomerId);
+        var name = user is not null ? $"{user.FirstName} {user.LastName}".Trim() : wallet.CustomerId;
+        return new CustomerLookupDto(wallet.Id, wallet.AccountNumber, name, wallet.Currency, wallet.BalanceKobo, user?.Email, user?.KycStatus.ToString() ?? "Pending");
+    }
+
+    public async Task<CreditResultDto?> CreditCustomerAccountAsync(string accountNumber, long amountKobo, string actor)
     {
         if (string.IsNullOrWhiteSpace(accountNumber) || amountKobo <= 0) return null;
 
-        var wallet = await db.Wallets.SingleOrDefaultAsync(x => x.AccountNumber == accountNumber && x.AccountType == AccountType.Customer);
-        if (wallet is null) return null;
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var wallet = await db.Wallets.FromSqlInterpolated($"SELECT TOP 1 * FROM Wallets WITH (UPDLOCK, HOLDLOCK, ROWLOCK) WHERE AccountNumber = {accountNumber} AND AccountType = {AccountType.Customer}").SingleOrDefaultAsync();
+            if (wallet is null) { await tx.RollbackAsync(); return null; }
 
-        var settlement = await db.Wallets.SingleAsync(x => x.SystemKey == SystemAccountKeys.Settlement);
-        var ledgerHolding = await db.ExternalAccounts.SingleAsync(x => x.AccountKey == ExternalAccountKeys.LedgerHolding);
-        var extSettlementHolding = await db.ExternalAccounts.SingleAsync(x => x.AccountKey == ExternalAccountKeys.SettlementHolding);
+            var settlement = await db.Wallets.FromSqlInterpolated($"SELECT TOP 1 * FROM Wallets WITH (UPDLOCK, HOLDLOCK, ROWLOCK) WHERE SystemKey = {SystemAccountKeys.Settlement}").SingleAsync();
 
-        var now = DateTimeOffset.UtcNow;
-        var before = wallet.BalanceKobo;
-        wallet.Credit(Money.Create(amountKobo), now);
-        settlement.Debit(Money.Create(amountKobo), now);
-        ledgerHolding.Credit(Money.Create(amountKobo), now);
-        extSettlementHolding.Debit(Money.Create(amountKobo), now);
+            var now = DateTimeOffset.UtcNow;
+            var walletBefore = wallet.BalanceKobo;
+            var settlementBefore = settlement.BalanceKobo;
 
-        db.LedgerEntries.Add(LedgerEntry.Create(null, wallet.Id, LedgerDirection.Credit, Money.Create(amountKobo), "AdminCredit", now));
-        db.LedgerEntries.Add(LedgerEntry.Create(null, settlement.Id, LedgerDirection.Debit, Money.Create(amountKobo), "SettlementOut", now));
-        db.AuditLogs.Add(AuditLog.Create(actor, "wallet.admin_credit", "Wallet", wallet.Id.ToString(),
-            System.Text.Json.JsonSerializer.Serialize(new { BalanceKobo = before, Settlement = settlement.BalanceKobo + amountKobo }),
-            System.Text.Json.JsonSerializer.Serialize(new { wallet.BalanceKobo, Settlement = settlement.BalanceKobo, LedgerHolding = ledgerHolding.BalanceKobo }),
-            Guid.NewGuid().ToString("N"), now));
+            wallet.Credit(Money.Create(amountKobo), now);
+            settlement.Debit(Money.Create(amountKobo), now);
 
-        await db.SaveChangesAsync();
-        return new CreditResultDto(wallet.AccountNumber, wallet.Currency, wallet.BalanceKobo, settlement.BalanceKobo, ledgerHolding.BalanceKobo);
+            db.LedgerEntries.Add(LedgerEntry.Create(null, wallet.Id, LedgerDirection.Credit, Money.Create(amountKobo), "AdminCredit", now));
+            db.LedgerEntries.Add(LedgerEntry.Create(null, settlement.Id, LedgerDirection.Debit, Money.Create(amountKobo), "SettlementOut", now));
+            db.AuditLogs.Add(AuditLog.Create(actor, "wallet.admin_credit", "Wallet", wallet.Id.ToString(),
+                System.Text.Json.JsonSerializer.Serialize(new { Wallet = walletBefore, Settlement = settlementBefore }),
+                System.Text.Json.JsonSerializer.Serialize(new { Wallet = wallet.BalanceKobo, Settlement = settlement.BalanceKobo }),
+                Guid.NewGuid().ToString("N"), now));
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+            return new CreditResultDto(wallet.AccountNumber, wallet.Currency, walletBefore, wallet.BalanceKobo, 0);
+        }
+        catch { await tx.RollbackAsync(); throw; }
     }
 
     public async Task<ChannelDto> CreateChannelAsync(string channelKey, string channelName)
@@ -132,5 +185,7 @@ public sealed class AdminDatabaseService(AppDbContext db)
     public record ChannelDto(string ChannelKey, string ChannelName, string AppKey, string Status, DateTimeOffset CreatedAt) { public string? AppSecret { get; init; } }
     public record UserDto(long Id, string CustomerId, string Email, string? PhoneNumber, string FirstName, string LastName, string KycStatus, DateTimeOffset CreatedAt);
     public record DashboardStatsDto(int TotalTransfers, int SettledCount, int FailedCount, int UnknownCount, long TotalOutboundAmount, int CustomerCount, int ChannelCount, int PendingJobs);
-    public record CreditResultDto(string AccountNumber, string Currency, long BalanceKobo, long SettlementBalanceKobo, long LedgerHoldingBalanceKobo);
+    public record CreditResultDto(string AccountNumber, string Currency, long BalanceBeforeKobo, long BalanceAfterKobo, long ExtSettlementBalanceKobo);
+    public record SettlementBalanceDto(string SettlementAccountNumber, long SettlementBalanceKobo, long ExtSettlementBalanceKobo, long LedgerHoldingBalanceKobo, long IncomeBalanceKobo, long VatBalanceKobo, long CustomerSumKobo);
+    public record CustomerLookupDto(Guid WalletId, string AccountNumber, string AccountName, string Currency, long BalanceKobo, string? Email, string KycStatus);
 }

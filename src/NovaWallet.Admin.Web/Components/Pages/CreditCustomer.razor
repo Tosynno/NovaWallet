@@ -1,0 +1,121 @@
+@page "/credit-customer"
+@using NovaWallet.Admin.Web.Services
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject AdminDatabaseService Db
+
+<PageTitle>Credit Customer - NovaWallet Admin</PageTitle>
+
+<div class="container-fluid" style="max-width:720px">
+    <h2>Credit Customer Account</h2>
+    <hr />
+    @if (ErrorMessage is not null) { <div class="alert alert-danger">@ErrorMessage</div> }
+    @if (SuccessMessage is not null) { <div class="alert alert-success">@SuccessMessage</div> }
+
+    <div class="card mb-3"><div class="card-body">
+        <h5><span class="oi oi-person me-2" style="color:var(--nw-accent)"></span>Step 1: Verify Account</h5>
+        <p class="text-muted">Enter a NovaWallet customer account number to verify before crediting.</p>
+        <div class="input-group" style="max-width:500px">
+            <span class="input-group-text"><span class="oi oi-wallet"></span></span>
+            <input class="form-control monospace" placeholder="e.g. 5000000001" @bind="AccountNumberInput" />
+            <button class="btn btn-primary" disabled="@Verifying || string.IsNullOrWhiteSpace(AccountNumberInput)" @onclick="VerifyAccount">
+                @if (Verifying) { <span class="spinner"></span> } else { <span class="oi oi-check me-1"></span> }
+                @(Verifying ? " Verifying..." : " Verify")
+            </button>
+        </div>
+
+        @if (Customer is not null)
+        {
+            <div class="alert alert-success mt-3 mb-0" style="background:#f0fff4;border:1px solid #d4edda">
+                <div class="d-flex align-items-center">
+                    <span class="oi oi-check-circle me-2" style="font-size:1.2rem;color:#28a745"></span>
+                    <div>
+                        <strong>@Customer.AccountName</strong>
+                        <span class="text-muted ms-2">@Customer.AccountNumber</span>
+                        <br />
+                        <span class="text-muted small">Current Balance: @Customer.Currency @((Customer.BalanceKobo / 100m).ToString("N2"))</span>
+                        @if (!string.IsNullOrWhiteSpace(Customer.Email)) { <span class="text-muted small ms-2">| @Customer.Email</span> }
+                        <span class="text-muted small ms-2">| KYC: @Customer.KycStatus</span>
+                    </div>
+                </div>
+            </div>
+        }
+    </div></div>
+
+    @if (Customer is not null)
+    {
+        <div class="card"><div class="card-body">
+            <h5><span class="oi oi-plus me-2" style="color:var(--nw-accent)"></span>Step 2: Enter Amount & Credit</h5>
+            <p class="text-muted">The amount is debited from the internal settlement account and credited to the customer wallet. External holding accounts are mirrored to keep balances in sync.</p>
+            <div class="mb-3">
+                <label class="form-label">Amount in Naira (NGN)</label>
+                <div class="input-group" style="max-width:400px">
+                    <span class="input-group-text">N</span>
+                    <input class="form-control" placeholder="e.g. 50000" @bind="AmountInput" />
+                </div>
+            </div>
+            <button class="btn btn-success" disabled="@Loading" @onclick="DoCredit">
+                @if (Loading) { <span class="spinner"></span> } else { <span class="oi oi-plus me-1"></span> }
+                @(Loading ? " Processing..." : " Credit Account")
+            </button>
+        </div></div>
+    }
+
+    @if (Result is not null)
+    {
+        <div class="card mt-3"><div class="card-body">
+            <h5>Credit Successful</h5>
+            <table class="table table-sm">
+                <tr><td>Account Number</td><td class="monospace">@Result.AccountNumber</td></tr>
+                <tr><td>Previous Balance</td><td>NGN @((Result.BalanceBeforeKobo / 100m).ToString("N2"))</td></tr>
+                <tr><td>New Balance</td><td><strong>@Result.Currency @((Result.BalanceAfterKobo / 100m).ToString("N2"))</strong></td></tr>
+                <tr><td>External Settlement Holding</td><td>NGN @((Result.ExtSettlementBalanceKobo / 100m).ToString("N2"))</td></tr>
+            </table>
+        </div></div>
+    }
+</div>
+
+@code {
+    private string AccountNumberInput = "";
+    private string AmountInput = "";
+    private string? ErrorMessage, SuccessMessage;
+    private bool Verifying, Loading;
+    private AdminDatabaseService.CustomerLookupDto? Customer;
+    private AdminDatabaseService.CreditResultDto? Result;
+
+    private async Task VerifyAccount()
+    {
+        if (string.IsNullOrWhiteSpace(AccountNumberInput)) return;
+        Verifying = true; ErrorMessage = null; SuccessMessage = null; Customer = null; Result = null;
+        try
+        {
+            Customer = await Db.VerifyCustomerAccountAsync(AccountNumberInput.Trim());
+            if (Customer is null) ErrorMessage = $"Account {AccountNumberInput} not found. Check the number and try again.";
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { Verifying = false; }
+    }
+
+    private async Task DoCredit()
+    {
+        if (Customer is null) { ErrorMessage = "Please verify an account first."; return; }
+        if (!decimal.TryParse(AmountInput, out var naira) || naira <= 0)
+        { ErrorMessage = "Please enter a valid amount greater than zero."; return; }
+
+        var amountKobo = (long)(naira * 100);
+        Loading = true; ErrorMessage = null; SuccessMessage = null; Result = null;
+        try
+        {
+            var result = await Db.CreditCustomerAccountAsync(Customer.AccountNumber, amountKobo, "ADMIN");
+            if (result is not null)
+            {
+                Result = result;
+                SuccessMessage = $"Account {result.AccountNumber} credited with N {naira:N2}. New balance: {result.Currency} {(result.BalanceAfterKobo / 100m):N2}.";
+                AmountInput = "";
+                Customer = await Db.VerifyCustomerAccountAsync(Customer.AccountNumber);
+            }
+            else ErrorMessage = "Credit failed. Account not found or invalid amount.";
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { Loading = false; }
+    }
+}

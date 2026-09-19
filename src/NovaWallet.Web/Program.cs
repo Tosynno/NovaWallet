@@ -9,7 +9,8 @@ builder.Services.AddAuthorization();
 builder.Services.AddAuthorizationCore();
 builder.Services.Configure<Microsoft.AspNetCore.SignalR.HubOptions>(options =>
 {
-    options.KeepAliveInterval = TimeSpan.FromSeconds(30);
+    options.KeepAliveInterval = TimeSpan.FromSeconds(10);
+    options.ClientTimeoutInterval = TimeSpan.FromMinutes(1);
 });
 builder.Services.AddCascadingAuthenticationState();
 

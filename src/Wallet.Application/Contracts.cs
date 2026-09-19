@@ -31,7 +31,7 @@ public interface IWalletService
     Task<WalletCreatedResult> CreateAsync(string customerId, string currency, string? accountName, CancellationToken ct);
     Task<BalanceResult?> GetAsync(Guid walletId, string customerId, CancellationToken ct);
     Task<BalanceResult> CreditAsync(Guid walletId, long amountKobo, string actor, string correlationId, CancellationToken ct);
-    Task<BalanceResult?> AdminCreditAsync(string accountNumber, long amountKobo, string actor, string correlationId, CancellationToken ct);
+    Task<BalanceResult> CreditSettlementAsync(long amountKobo, string actor, string correlationId, CancellationToken ct);
     Task<IReadOnlyList<StatementItem>> StatementAsync(Guid walletId, int page, int pageSize, CancellationToken ct);
     Task<NameEnquiryResult?> NameEnquiryAsync(string accountNumber, CancellationToken ct);
     Task<IReadOnlyList<WalletSummaryResult>> ListByCustomerAsync(string customerId, CancellationToken ct);

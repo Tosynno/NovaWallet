@@ -3,26 +3,42 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @inject AdminDatabaseService Db
 
-<PageTitle>Credit Account - NovaWallet Admin</PageTitle>
+<PageTitle>Credit Settlement - NovaWallet Admin</PageTitle>
 
-<div class="container-fluid" style="max-width:640px">
-    <h2>Credit Customer Account</h2>
+<div class="container-fluid" style="max-width:720px">
+    <h2>Credit Settlement Account</h2>
     <hr />
     @if (ErrorMessage is not null) { <div class="alert alert-danger">@ErrorMessage</div> }
     @if (SuccessMessage is not null) { <div class="alert alert-success">@SuccessMessage</div> }
+
+    @if (Balance is not null)
+    {
+        <div class="card mb-3"><div class="card-body">
+            <h5>Settlement Account Overview</h5>
+            <table class="table table-sm">
+                <tr><td>Account Number</td><td class="monospace">@Balance.SettlementAccountNumber</td></tr>
+                <tr><td>Settlement Balance (Internal)</td><td><strong>NGN @((Balance.SettlementBalanceKobo / 100m).ToString("N2"))</strong></td></tr>
+                <tr><td>Settlement Holding (External)</td><td>NGN @((Balance.ExtSettlementBalanceKobo / 100m).ToString("N2"))</td></tr>
+                <tr><td>Ledger Holding (External)</td><td>NGN @((Balance.LedgerHoldingBalanceKobo / 100m).ToString("N2"))</td></tr>
+                <tr><td>Customer Wallets Total</td><td>NGN @((Balance.CustomerSumKobo / 100m).ToString("N2"))</td></tr>
+                <tr><td>Income Balance</td><td>NGN @((Balance.IncomeBalanceKobo / 100m).ToString("N2"))</td></tr>
+                <tr><td>VAT Balance</td><td>NGN @((Balance.VatBalanceKobo / 100m).ToString("N2"))</td></tr>
+            </table>
+        </div></div>
+    }
+
     <div class="card"><div class="card-body">
-        <p class="text-muted">Credit a customer wallet directly. The amount is debited from the internal settlement account and mirrored to external holding accounts.</p>
+        <p class="text-muted">Credit the internal settlement account. The external settlement holding account is credited by the same amount to keep internal and external in balance.</p>
         <div class="mb-3">
-            <label class="form-label">Account Number</label>
-            <input class="form-control monospace" placeholder="5000000000" @bind="AccountNumber" />
+            <label class="form-label">Amount in Naira (NGN)</label>
+            <div class="input-group" style="max-width:400px">
+                <span class="input-group-text">N</span>
+                <input class="form-control" placeholder="e.g. 6000000000" @bind="AmountInput" />
+            </div>
         </div>
-        <div class="mb-3">
-            <label class="form-label">Amount (Kobo)</label>
-            <input type="number" class="form-control" placeholder="e.g. 1000000 for N 10,000" @bind="AmountKobo" />
-        </div>
-        <button class="btn btn-success" disabled="@Loading || string.IsNullOrWhiteSpace(AccountNumber) || AmountKobo <= 0" @onclick="DoCredit">
+        <button class="btn btn-success" disabled="@Loading" @onclick="DoCredit">
             @if (Loading) { <span class="spinner"></span> } else { <span class="oi oi-plus me-1"></span> }
-            @(Loading ? " Processing..." : " Credit Account")
+            @(Loading ? " Processing..." : " Credit Settlement")
         </button>
     </div></div>
 
@@ -32,36 +48,47 @@
             <h5>Credit Successful</h5>
             <table class="table table-sm">
                 <tr><td>Account Number</td><td class="monospace">@Result.AccountNumber</td></tr>
-                <tr><td>Currency</td><td>@Result.Currency</td></tr>
-                <tr><td>New Balance</td><td>@Result.Currency @((Result.BalanceKobo / 100m).ToString("N2"))</td></tr>
-                <tr><td>Settlement Balance</td><td>NGN @((Result.SettlementBalanceKobo / 100m).ToString("N2"))</td></tr>
-                <tr><td>Ledger Holding Balance</td><td>NGN @((Result.LedgerHoldingBalanceKobo / 100m).ToString("N2"))</td></tr>
+                <tr><td>Previous Balance</td><td>NGN @((Result.BalanceBeforeKobo / 100m).ToString("N2"))</td></tr>
+                <tr><td>New Balance</td><td><strong>NGN @((Result.BalanceAfterKobo / 100m).ToString("N2"))</strong></td></tr>
+                <tr><td>External Settlement Holding</td><td>NGN @((Result.ExtSettlementBalanceKobo / 100m).ToString("N2"))</td></tr>
             </table>
         </div></div>
     }
 </div>
 
 @code {
-    private string AccountNumber = "";
-    private long AmountKobo;
+    private string AmountInput = "";
     private string? ErrorMessage, SuccessMessage;
     private bool Loading;
     private AdminDatabaseService.CreditResultDto? Result;
+    private AdminDatabaseService.SettlementBalanceDto? Balance;
+
+    protected override async Task OnInitializedAsync() => await LoadBalance();
+
+    private async Task LoadBalance()
+    {
+        try { Balance = await Db.GetSettlementBalanceAsync(); }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+    }
 
     private async Task DoCredit()
     {
+        if (!decimal.TryParse(AmountInput, out var naira) || naira <= 0)
+        { ErrorMessage = "Please enter a valid amount greater than zero."; return; }
+
+        var amountKobo = (long)(naira * 100);
         Loading = true; ErrorMessage = null; SuccessMessage = null; Result = null;
         try
         {
-            var result = await Db.CreditAccountAsync(AccountNumber, AmountKobo, "ADMIN");
+            var result = await Db.CreditSettlementAsync(amountKobo, "ADMIN");
             if (result is not null)
             {
                 Result = result;
-                SuccessMessage = $"Account {result.AccountNumber} credited successfully with N {(AmountKobo / 100m):N2}.";
-                AccountNumber = "";
-                AmountKobo = 0;
+                SuccessMessage = $"Settlement account credited with N {naira:N2}.";
+                AmountInput = "";
+                await LoadBalance();
             }
-            else ErrorMessage = "Account not found or invalid amount.";
+            else ErrorMessage = "Invalid amount.";
         }
         catch (Exception ex) { ErrorMessage = ex.Message; }
         finally { Loading = false; }

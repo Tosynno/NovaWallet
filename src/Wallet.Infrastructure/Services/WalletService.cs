@@ -10,7 +10,6 @@ namespace NovaWallet.Infrastructure;
 public sealed class WalletService(
     IUnitOfWork uow,
     IWalletRepository wallets,
-    IExternalAccountRepository externalAccounts,
     ILedgerEntryRepository ledgerEntries,
     IAuditLogRepository auditLogs,
     IClock clock,
@@ -58,23 +57,17 @@ public sealed class WalletService(
 
             var settlement = await wallets.GetBySystemKeyForUpdateAsync(SystemAccountKeys.Settlement, ct)
                 ?? throw new DomainException("system_account.missing", "Settlement account is not seeded.");
-            var ledgerHolding = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.LedgerHolding, ct)
-                ?? throw new DomainException("external_account.missing", "Ledger holding account is not seeded.");
-            var extSettlementHolding = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.SettlementHolding, ct)
-                ?? throw new DomainException("external_account.missing", "Settlement holding account is not seeded.");
 
             var before = wallet.BalanceKobo;
             wallet.Credit(Money.Create(amountKobo), clock.UtcNow);
             settlement.Debit(Money.Create(amountKobo), clock.UtcNow);
-            ledgerHolding.Credit(Money.Create(amountKobo), clock.UtcNow);
-            extSettlementHolding.Debit(Money.Create(amountKobo), clock.UtcNow);
 
             await ledgerEntries.AddAsync(LedgerEntry.Create(null, wallet.Id, LedgerDirection.Credit, Money.Create(amountKobo), "Deposit", clock.UtcNow), ct);
             await ledgerEntries.AddAsync(LedgerEntry.Create(null, settlement.Id, LedgerDirection.Debit, Money.Create(amountKobo), "SettlementOut", clock.UtcNow), ct);
 
             await auditLogs.AddAsync(AuditLog.Create(actor, "wallet.credit", "Wallet", wallet.Id.ToString(),
                 JsonSerializer.Serialize(new { BalanceKobo = before, Settlement = settlement.BalanceKobo + amountKobo }),
-                JsonSerializer.Serialize(new { wallet.BalanceKobo, Settlement = settlement.BalanceKobo, LedgerHolding = ledgerHolding.BalanceKobo }),
+                JsonSerializer.Serialize(new { wallet.BalanceKobo, Settlement = settlement.BalanceKobo }),
                 correlationId, clock.UtcNow), ct);
             await uow.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
@@ -83,41 +76,30 @@ public sealed class WalletService(
         catch { await tx.RollbackAsync(ct); throw; }
     }
 
-    public async Task<BalanceResult?> AdminCreditAsync(string accountNumber, long amountKobo, string actor, string correlationId, CancellationToken ct)
+    public async Task<BalanceResult> CreditSettlementAsync(long amountKobo, string actor, string correlationId, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(accountNumber) || amountKobo <= 0) return null;
-
-        var wallet = await wallets.GetByAccountNumberAsync(accountNumber, ct);
-        if (wallet is null || wallet.AccountType != AccountType.Customer) return null;
+        if (amountKobo <= 0) throw new DomainException("amount.invalid", "Amount must be greater than zero.");
 
         await using var tx = await uow.BeginTransactionAsync(ct);
         try
         {
-            var walletForUpdate = await wallets.GetByIdForUpdateAsync(wallet.Id, ct)
-                ?? throw new DomainException("wallet.not_found", "Wallet not found.");
             var settlement = await wallets.GetBySystemKeyForUpdateAsync(SystemAccountKeys.Settlement, ct)
                 ?? throw new DomainException("system_account.missing", "Settlement account is not seeded.");
-            var ledgerHolding = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.LedgerHolding, ct)
-                ?? throw new DomainException("external_account.missing", "Ledger holding account is not seeded.");
             var extSettlementHolding = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.SettlementHolding, ct)
                 ?? throw new DomainException("external_account.missing", "Settlement holding account is not seeded.");
 
-            var before = walletForUpdate.BalanceKobo;
-            walletForUpdate.Credit(Money.Create(amountKobo), clock.UtcNow);
-            settlement.Debit(Money.Create(amountKobo), clock.UtcNow);
-            ledgerHolding.Credit(Money.Create(amountKobo), clock.UtcNow);
-            extSettlementHolding.Debit(Money.Create(amountKobo), clock.UtcNow);
+            settlement.Credit(Money.Create(amountKobo), clock.UtcNow);
+            extSettlementHolding.Credit(Money.Create(amountKobo), clock.UtcNow);
 
-            await ledgerEntries.AddAsync(LedgerEntry.Create(null, walletForUpdate.Id, LedgerDirection.Credit, Money.Create(amountKobo), "AdminCredit", clock.UtcNow), ct);
-            await ledgerEntries.AddAsync(LedgerEntry.Create(null, settlement.Id, LedgerDirection.Debit, Money.Create(amountKobo), "SettlementOut", clock.UtcNow), ct);
+            await ledgerEntries.AddAsync(LedgerEntry.Create(null, settlement.Id, LedgerDirection.Credit, Money.Create(amountKobo), "SettlementFunding", clock.UtcNow), ct);
 
-            await auditLogs.AddAsync(AuditLog.Create(actor, "wallet.admin_credit", "Wallet", walletForUpdate.Id.ToString(),
-                JsonSerializer.Serialize(new { BalanceKobo = before, Settlement = settlement.BalanceKobo + amountKobo }),
-                JsonSerializer.Serialize(new { walletForUpdate.BalanceKobo, Settlement = settlement.BalanceKobo, LedgerHolding = ledgerHolding.BalanceKobo }),
+            await auditLogs.AddAsync(AuditLog.Create(actor, "settlement.credit", "Wallet", settlement.Id.ToString(),
+                JsonSerializer.Serialize(new { SettlementBalance = settlement.BalanceKobo - amountKobo }),
+                JsonSerializer.Serialize(new { SettlementBalance = settlement.BalanceKobo, ExtSettlementBalance = extSettlementHolding.BalanceKobo }),
                 correlationId, clock.UtcNow), ct);
             await uow.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
-            return new BalanceResult(walletForUpdate.AccountNumber, walletForUpdate.Currency, walletForUpdate.BalanceKobo);
+            return new BalanceResult(settlement.AccountNumber, settlement.Currency, settlement.BalanceKobo);
         }
         catch { await tx.RollbackAsync(ct); throw; }
     }
