@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using NovaWallet.Admin.Web.Components;
 using NovaWallet.Admin.Web.Services;
@@ -5,12 +7,23 @@ using NovaWallet.Application;
 using NovaWallet.Application.Repositories;
 using NovaWallet.Infrastructure;
 using NovaWallet.Infrastructure.Repositories;
+using System.Security.Claims;
+using IClock = NovaWallet.Application.IClock;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddAuthentication("AdminCookie").AddCookie("AdminCookie", o =>
+{
+    o.LoginPath = "/login";
+    o.AccessDeniedPath = "/login";
+    o.ExpireTimeSpan = TimeSpan.FromHours(8);
+    o.Cookie.Name = "NovaWallet.Admin";
+    o.Cookie.HttpOnly = true;
+    o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+});
+
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
-builder.Services.AddAuthorization();
 builder.Services.AddAuthorizationCore();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.Configure<Microsoft.AspNetCore.SignalR.HubOptions>(options =>
@@ -31,10 +44,11 @@ builder.Services.AddScoped<IExternalAccountRepository, ExternalAccountRepository
 builder.Services.AddScoped<IReconciliationRepository, ReconciliationRepository>();
 builder.Services.AddScoped<IDailyOutboundCounterRepository, DailyOutboundCounterRepository>();
 builder.Services.AddScoped<IReconciliationService, ReconciliationService>();
-builder.Services.AddSingleton<IClock, SystemClock>();
+builder.Services.AddSingleton<IClock, NovaWallet.Application.SystemClock>();
 builder.Services.AddSingleton<IPaymentRail, MockNipPaymentRail>();
 
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CustomAuthStateProvider>();
 builder.Services.AddScoped<Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider>(sp => sp.GetRequiredService<CustomAuthStateProvider>());
 
@@ -47,6 +61,8 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseAntiforgery();
 
 using (var scope = app.Services.CreateScope())
@@ -57,5 +73,38 @@ using (var scope = app.Services.CreateScope())
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+app.MapPost("/auth/login", async (HttpContext http, AuthService auth) =>
+{
+    var form = await http.Request.ReadFormAsync();
+    var username = form["username"].ToString();
+    var password = form["password"].ToString();
+    var returnUrl = form["returnUrl"].ToString();
+
+    if (auth.Validate(username, password))
+    {
+        auth.SetAuthenticated(username);
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.Name, username),
+            new Claim(ClaimTypes.Role, "admin"),
+        };
+        var identity = new ClaimsIdentity(claims, "AdminCookie");
+        var principal = new ClaimsPrincipal(identity);
+        await http.SignInAsync("AdminCookie", principal);
+        http.Response.Redirect(string.IsNullOrWhiteSpace(returnUrl) ? "/dashboard" : returnUrl);
+    }
+    else
+    {
+        http.Response.Redirect("/login?error=1");
+    }
+}).AllowAnonymous();
+
+app.MapPost("/auth/logout", async (HttpContext http, AuthService auth) =>
+{
+    auth.Logout();
+    await http.SignOutAsync("AdminCookie");
+    http.Response.Redirect("/login");
+}).AllowAnonymous();
 
 app.Run();

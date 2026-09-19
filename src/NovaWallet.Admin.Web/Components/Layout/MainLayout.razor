@@ -13,7 +13,9 @@
             {
                 <div class="d-flex align-items-center gap-3">
                     <span class="text-muted small">@Auth.DisplayName</span>
-                    <button class="btn btn-outline-primary btn-sm" @onclick="DoLogout">Logout</button>
+                    <form method="post" action="/auth/logout" class="d-inline">
+                        <button type="submit" class="btn btn-outline-primary btn-sm">Logout</button>
+                    </form>
                 </div>
             }
             else
@@ -32,12 +34,3 @@
     <a href="" class="reload">Reload</a>
     <a class="dismiss">X</a>
 </div>
-
-@code {
-    private void DoLogout()
-    {
-        Auth.Logout();
-        AuthStateProvider.NotifyChanged();
-        Nav.NavigateTo("/login", forceLoad: true);
-    }
-}

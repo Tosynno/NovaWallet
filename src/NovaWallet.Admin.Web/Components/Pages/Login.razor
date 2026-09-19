@@ -1,8 +1,5 @@
 @page "/login"
 @layout NovaWallet.Admin.Web.Components.Layout.LoginLayout
-@using NovaWallet.Admin.Web.Services
-@inject AuthService Auth
-@inject CustomAuthStateProvider AuthStateProvider
 @inject NavigationManager Nav
 
 <PageTitle>Login - NovaWallet Admin</PageTitle>
@@ -30,49 +27,36 @@
                 <h3 class="login-title">Sign In</h3>
                 <p class="login-subtitle">Enter your administrator credentials to continue</p>
 
-                @if (ErrorMessage is not null)
+                @if (HasError)
                 {
                     <div class="alert alert-danger mb-3 d-flex align-items-center gap-2">
                         <span class="oi oi-warning" style="font-size:1rem"></span>
-                        <span>@ErrorMessage</span>
+                        <span>Invalid username or password. Please try again.</span>
                     </div>
                 }
 
-                <EditForm Model="@LoginModel" FormName="admin-login" OnValidSubmit="@DoLogin">
-                    <DataAnnotationsValidator />
-                    <ValidationSummary class="text-danger small mb-2" />
+                <form method="post" action="/auth/login">
+                    <input type="hidden" name="returnUrl" value="@ReturnUrl" />
                     <div class="login-field-group">
                         <label class="form-label">Username</label>
                         <span class="oi oi-person login-field-icon"></span>
-                        <InputText class="form-control" placeholder="Enter username" @bind-Value="LoginModel.Username" autocomplete="username" />
+                        <input name="username" class="form-control" placeholder="Enter username" autocomplete="username" required minlength="3" />
                     </div>
                     <div class="login-field-group">
                         <label class="form-label">Password</label>
                         <span class="oi oi-lock login-field-icon"></span>
-                        <InputText type="@(ShowPassword ? "text" : "password")" class="form-control" placeholder="Enter password" @bind-Value="LoginModel.Password" autocomplete="current-password" />
-                        <button type="button" class="login-toggle-password" @onclick="@(() => ShowPassword = !ShowPassword)" aria-label="Toggle password visibility">
-                            <span class="oi @(ShowPassword ? "oi-eye-open" : "oi-eye")"></span>
-                        </button>
+                        <input name="password" type="password" class="form-control" placeholder="Enter password" autocomplete="current-password" required minlength="6" />
                     </div>
                     <div class="login-remember">
                         <label>
-                            <input type="checkbox" @bind="RememberMe" />
+                            <input type="checkbox" name="remember" value="true" />
                             <span>Remember me</span>
                         </label>
-                        @* <a href="#" class="login-forgot">Forgot password?</a> *@
                     </div>
-                    <button type="submit" class="btn btn-primary login-btn" disabled="@Loading">
-                        @if (Loading)
-                        {
-                            <span class="spinner"></span>
-                            <span class="ms-2">Signing in...</span>
-                        }
-                        else
-                        {
-                            <span>Sign In</span>
-                        }
+                    <button type="submit" class="btn btn-primary login-btn">
+                        <span>Sign In</span>
                     </button>
-                </EditForm>
+                </form>
 
                 <div class="login-divider">or</div>
                 <p class="login-footer-text">
@@ -85,59 +69,26 @@
 </div>
 
 @code {
-    private LoginFormData LoginModel = new();
-    private string? ErrorMessage;
-    private bool Loading;
-    private bool ShowPassword;
-    private bool RememberMe;
+    private bool HasError;
     private string? ReturnUrl;
 
     protected override void OnInitialized()
     {
         var uri = Nav.ToBaseRelativePath(Nav.Uri);
+        if (uri.Contains("error=1"))
+            HasError = true;
         if (uri.StartsWith("login?returnUrl="))
         {
             var decoded = Uri.UnescapeDataString(uri["login?returnUrl=".Length..]);
             if (decoded.StartsWith('/') && !decoded.StartsWith("//"))
                 ReturnUrl = decoded;
         }
-    }
-
-    private async Task DoLogin()
-    {
-        Loading = true;
-        ErrorMessage = null;
-        try
+        else if (uri.Contains("returnUrl="))
         {
-            if (Auth.Validate(LoginModel.Username, LoginModel.Password))
-            {
-                Auth.SetAuthenticated(LoginModel.Username);
-                AuthStateProvider.NotifyChanged();
-                Nav.NavigateTo(string.IsNullOrWhiteSpace(ReturnUrl) ? "/dashboard" : ReturnUrl);
-            }
-            else
-            {
-                ErrorMessage = "Invalid username or password. Please try again.";
-            }
+            var idx = uri.IndexOf("returnUrl=");
+            var decoded = Uri.UnescapeDataString(uri[(idx + "returnUrl=".Length)..]);
+            if (decoded.StartsWith('/') && !decoded.StartsWith("//"))
+                ReturnUrl = decoded;
         }
-        catch (Exception ex)
-        {
-            ErrorMessage = $"Login failed: {ex.Message}";
-        }
-        finally
-        {
-            Loading = false;
-        }
-    }
-
-    private sealed class LoginFormData
-    {
-        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Username is required")]
-        [System.ComponentModel.DataAnnotations.MinLength(3, ErrorMessage = "Username must be at least 3 characters")]
-        public string Username { get; set; } = "";
-
-        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Password is required")]
-        [System.ComponentModel.DataAnnotations.MinLength(6, ErrorMessage = "Password must be at least 6 characters")]
-        public string Password { get; set; } = "";
     }
 }

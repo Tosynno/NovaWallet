@@ -1,5 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
 
 namespace NovaWallet.Admin.Web.Services;
 
@@ -49,20 +52,32 @@ public sealed class AdminCredentialOptions
     public string Password { get; set; } = "";
 }
 
-public sealed class CustomAuthStateProvider(AuthService auth) : Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider
+public sealed class CustomAuthStateProvider(IHttpContextAccessor httpContextAccessor, AuthService auth) : AuthenticationStateProvider
 {
-    public override Task<Microsoft.AspNetCore.Components.Authorization.AuthenticationState> GetAuthenticationStateAsync()
+    public override Task<AuthenticationState> GetAuthenticationStateAsync()
     {
+        var user = httpContextAccessor.HttpContext?.User;
+        if (user is not null && user.Identity?.IsAuthenticated == true)
+        {
+            if (!auth.IsAuthenticated)
+            {
+                var name = user.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? "admin";
+                auth.SetAuthenticated(name);
+            }
+            return Task.FromResult(new AuthenticationState(user));
+        }
+
         if (auth.IsAuthenticated)
         {
-            var identity = new System.Security.Claims.ClaimsIdentity(new[]
+            var identity = new ClaimsIdentity(new[]
             {
-                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, auth.Username ?? "admin"),
-                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "admin"),
+                new Claim(ClaimTypes.Name, auth.Username ?? "admin"),
+                new Claim(ClaimTypes.Role, "admin"),
             }, "local");
-            return Task.FromResult(new Microsoft.AspNetCore.Components.Authorization.AuthenticationState(new System.Security.Claims.ClaimsPrincipal(identity)));
+            return Task.FromResult(new AuthenticationState(new ClaimsPrincipal(identity)));
         }
-        return Task.FromResult(new Microsoft.AspNetCore.Components.Authorization.AuthenticationState(new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity())));
+
+        return Task.FromResult(new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity())));
     }
 
     public void NotifyChanged() => NotifyAuthenticationStateChanged(GetAuthenticationStateAsync());

@@ -85,7 +85,7 @@ public sealed class WalletService(
         {
             var settlement = await wallets.GetBySystemKeyForUpdateAsync(SystemAccountKeys.Settlement, ct)
                 ?? throw new DomainException("system_account.missing", "Settlement account is not seeded.");
-            var extSettlementHolding = await externalAccounts.GetByKeyForUpdateAsync(ExternalAccountKeys.SettlementHolding, ct)
+            var extSettlementHolding = await db.ExternalAccounts.SingleOrDefaultAsync(x => x.AccountKey == ExternalAccountKeys.SettlementHolding, ct)
                 ?? throw new DomainException("external_account.missing", "Settlement holding account is not seeded.");
 
             settlement.Credit(Money.Create(amountKobo), clock.UtcNow);
